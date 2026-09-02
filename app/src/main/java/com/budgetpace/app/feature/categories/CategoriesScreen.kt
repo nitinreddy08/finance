@@ -68,8 +68,8 @@ fun CategoriesRoute(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { /* Add category */ },
-                containerColor = MaterialTheme.bpColors.primary,
-                contentColor = MaterialTheme.bpColors.onPrimary
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
                 Text("+")
             }

@@ -1,4 +1,4 @@
-package com.budgetpace.app.data.repository
+package com.budgetpace.app.domain.repository
 
 import com.budgetpace.app.core.model.BudgetMonth
 import com.budgetpace.app.core.model.MonthSummary

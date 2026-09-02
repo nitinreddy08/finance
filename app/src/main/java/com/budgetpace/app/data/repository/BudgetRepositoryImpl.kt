@@ -10,6 +10,9 @@ import com.budgetpace.app.domain.budget.BudgetEngine
 import com.budgetpace.app.domain.repository.BudgetRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 class BudgetRepositoryImpl(
     private val monthDao: BudgetMonthDao,
@@ -18,12 +21,12 @@ class BudgetRepositoryImpl(
     private val carryForwardDao: CarryForwardDao
 ) : BudgetRepository {
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeActiveMonthSummary(): Flow<MonthSummary?> {
-        // Simplified for Phase 1: observe active month and its relations
-        return monthDao.observeActiveMonth().combine(categoryDao.observeByMonth("")) { month, cats -> month }
-            .combine(transactionDao.observeByMonth("")) { m, t -> m } // Dummy placeholder for complex flow combination
-            // In a real implementation, we would use flatMapLatest to observe relations based on the active month's ID
-            // For this skeleton, we'll return a basic flow
+        return monthDao.observeActiveMonth().flatMapLatest { monthEntity ->
+            if (monthEntity == null) flowOf(null)
+            else observeMonthSummary(monthEntity.id)
+        }
     }
     
     override fun observeMonthSummary(monthId: String): Flow<MonthSummary?> {
