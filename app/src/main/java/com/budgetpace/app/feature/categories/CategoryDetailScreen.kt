@@ -1,9 +1,11 @@
 package com.budgetpace.app.feature.categories
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -22,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -99,7 +102,10 @@ fun CategoryDetailRoute(
             CategoryDetailBody(
                 summary = it,
                 transactions = transactions,
-                modifier = Modifier.padding(innerPadding)
+                modifier = Modifier.padding(innerPadding),
+                onCarryForward = { sourcePeriod, targetPeriod, amountMinor ->
+                    viewModel.carryForward(categoryId, sourcePeriod, targetPeriod, amountMinor)
+                },
             )
         }
     }
@@ -135,7 +141,9 @@ private fun CategoryDetailBody(
     summary: CategorySummary,
     transactions: List<Transaction>,
     modifier: Modifier = Modifier,
+    onCarryForward: (sourcePeriod: Int, targetPeriod: Int, amountMinor: Long) -> Unit = { _, _, _ -> },
 ) {
+    var showCarryForwardDialog by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -185,7 +193,32 @@ private fun CategoryDetailBody(
                     PeriodBar(period = period, modifier = Modifier.weight(1f))
                 }
             }
+
+            // Only offer this when there's actually unused budget in a period that has already
+            // started, and a later period to move it into.
+            val canCarryForward = summary.periods.any { source ->
+                source.periodStatus != PeriodStatus.UPCOMING &&
+                    source.remainingMinor > 0 &&
+                    source.periodIndex < summary.periods.last().periodIndex
+            }
+            if (canCarryForward) {
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(onClick = { showCarryForwardDialog = true }) {
+                    Text("Carry forward unused budget", color = Color(0xFF4CAF50))
+                }
+            }
             Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        if (showCarryForwardDialog) {
+            CarryForwardDialog(
+                periods = summary.periods,
+                onDismiss = { showCarryForwardDialog = false },
+                onConfirm = { sourcePeriod, targetPeriod, amountMinor ->
+                    onCarryForward(sourcePeriod, targetPeriod, amountMinor)
+                    showCarryForwardDialog = false
+                }
+            )
         }
 
         Text(
@@ -291,4 +324,83 @@ private fun CategoryTransactionRow(transaction: Transaction) {
             color = MaterialTheme.colorScheme.onBackground
         )
     }
+}
+
+/**
+ * Lets the user move unused budget from a period that has already started into any later
+ * period — the source doesn't have to be the immediate previous one, and the target doesn't
+ * have to be the immediate next one; BudgetEngine already applies carry-forwards generically by
+ * period index.
+ */
+@Composable
+private fun CarryForwardDialog(
+    periods: List<PeriodSummary>,
+    onDismiss: () -> Unit,
+    onConfirm: (sourcePeriod: Int, targetPeriod: Int, amountMinor: Long) -> Unit,
+) {
+    val sourceOptions = periods.filter { it.periodStatus != PeriodStatus.UPCOMING && it.remainingMinor > 0 }
+    var sourcePeriod by remember { mutableStateOf(sourceOptions.first().periodIndex) }
+    val targetOptions = periods.filter { it.periodIndex > sourcePeriod }
+    var targetPeriod by remember(sourcePeriod) { mutableStateOf(targetOptions.firstOrNull()?.periodIndex) }
+    val maxAmountMinor = periods.first { it.periodIndex == sourcePeriod }.remainingMinor
+    var amountText by remember(sourcePeriod) { mutableStateOf((maxAmountMinor / 100).toString()) }
+    val amountMinor = Money.rupeesToPaise(amountText.ifBlank { "0" }).coerceIn(0, maxAmountMinor)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onBackground,
+        title = { Text("Carry forward unused budget") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("From", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                sourceOptions.forEach { period ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { sourcePeriod = period.periodIndex },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = sourcePeriod == period.periodIndex, onClick = null)
+                        Text(
+                            "Period ${period.periodIndex + 1} — ${Money.formatRupeesWhole(period.remainingMinor)} unused",
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { amountText = it.filter { c -> c.isDigit() } },
+                    label = { Text("Amount") },
+                    prefix = { Text("₹ ") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
+
+                Text("To", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (targetOptions.isEmpty()) {
+                    Text("No later period available.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                targetOptions.forEach { period ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { targetPeriod = period.periodIndex },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = targetPeriod == period.periodIndex, onClick = null)
+                        Text("Period ${period.periodIndex + 1}", color = MaterialTheme.colorScheme.onBackground)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = amountMinor > 0 && targetPeriod != null,
+                onClick = { targetPeriod?.let { onConfirm(sourcePeriod, it, amountMinor) } }
+            ) {
+                Text("Carry forward", color = Color(0xFF4CAF50))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    )
 }

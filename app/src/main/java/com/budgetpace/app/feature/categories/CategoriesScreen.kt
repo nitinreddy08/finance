@@ -25,11 +25,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.budgetpace.app.core.designsystem.components.CATEGORY_EMOJI_CHOICES
 import com.budgetpace.app.core.designsystem.components.CategoryIcon
+import com.budgetpace.app.core.model.BudgetCarryForward
 import com.budgetpace.app.core.model.Category
 import com.budgetpace.app.core.model.CategorySummary
 import com.budgetpace.app.core.model.Transaction
 import com.budgetpace.app.core.money.Money
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
+import com.budgetpace.app.data.local.dao.CarryForwardDao
 import com.budgetpace.app.data.local.dao.CategoryDao
 import com.budgetpace.app.data.local.dao.TransactionDao
 import com.budgetpace.app.data.local.mapper.toDomain
@@ -56,6 +58,7 @@ class CategoriesViewModel @Inject constructor(
     private val budgetMonthDao: BudgetMonthDao,
     private val categoryDao: CategoryDao,
     private val transactionDao: TransactionDao,
+    private val carryForwardDao: CarryForwardDao,
 ) : ViewModel() {
 
     val uiState: StateFlow<CategoriesUiState> = budgetRepository.observeActiveMonthSummary()
@@ -108,6 +111,25 @@ class CategoriesViewModel @Inject constructor(
 
     suspend fun transactionsForCategory(categoryId: String): List<Transaction> =
         transactionDao.getByCategory(categoryId).map { it.toDomain() }
+
+    /** Spec: move unused budget from a completed/current period to any later period. */
+    fun carryForward(categoryId: String, sourcePeriod: Int, targetPeriod: Int, amountMinor: Long) {
+        if (amountMinor <= 0 || targetPeriod <= sourcePeriod) return
+        viewModelScope.launch {
+            val month = budgetMonthDao.getActiveMonth() ?: return@launch
+            carryForwardDao.insert(
+                BudgetCarryForward(
+                    id = UUID.randomUUID(),
+                    monthId = UUID.fromString(month.id),
+                    categoryId = UUID.fromString(categoryId),
+                    sourcePeriod = sourcePeriod,
+                    targetPeriod = targetPeriod,
+                    amountMinor = amountMinor,
+                    createdAt = Instant.now(),
+                ).toEntity()
+            )
+        }
+    }
 
     /** Reactive transaction list for Category Detail — reflects edits/deletes without renavigating. */
     @OptIn(ExperimentalCoroutinesApi::class)
