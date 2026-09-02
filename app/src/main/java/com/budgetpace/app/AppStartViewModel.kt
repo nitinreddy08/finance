@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budgetpace.app.core.designsystem.theme.ThemeMode
 import com.budgetpace.app.core.designsystem.theme.ThemePreference
+import com.budgetpace.app.data.google.auth.GoogleAuthorizationManager
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
+import com.budgetpace.app.domain.auth.AuthRepository
 import com.budgetpace.app.domain.usecase.EnsureActiveMonthUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,6 +27,8 @@ class AppStartViewModel @Inject constructor(
     budgetMonthDao: BudgetMonthDao,
     private val ensureActiveMonth: EnsureActiveMonthUseCase,
     themePreference: ThemePreference,
+    private val authRepository: AuthRepository,
+    private val authorizationManager: GoogleAuthorizationManager,
 ) : ViewModel() {
 
     val isOnboarded: StateFlow<Boolean?> = budgetMonthDao.observeAll()
@@ -42,5 +46,11 @@ class AppStartViewModel @Inject constructor(
                 ensureActiveMonth()
             }
         }
+
+        // A restored session/authorization only carries identity, not a live token — refresh
+        // both silently so the UI doesn't wrongly show "not connected" after every restart even
+        // though Google-side consent from a previous session is still valid.
+        viewModelScope.launch { authRepository.refreshSessionSilently() }
+        viewModelScope.launch { authorizationManager.restoreIfNeeded() }
     }
 }

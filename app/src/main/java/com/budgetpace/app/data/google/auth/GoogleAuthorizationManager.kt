@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.budgetpace.app.core.security.securePrefs
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
@@ -42,7 +43,14 @@ class GoogleAuthorizationManager @Inject constructor(
             Scope("https://www.googleapis.com/auth/drive.file"),
             Scope(SheetsScopes.SPREADSHEETS),
         )
+        private const val KEY_WAS_AUTHORIZED = "was_authorized"
     }
+
+    // The access token itself is never persisted (it's short-lived) — only whether consent was
+    // previously granted, so restoreIfNeeded() knows it's worth attempting a silent refresh
+    // instead of leaving the UI stuck on "not connected" after every process restart even though
+    // Google-side consent is still valid.
+    private val prefs = securePrefs(context, "google_authorization")
 
     private val _isAuthorized = MutableStateFlow(false)
     val isAuthorized: StateFlow<Boolean> = _isAuthorized.asStateFlow()
@@ -51,6 +59,15 @@ class GoogleAuthorizationManager @Inject constructor(
     private var cachedAccessToken: String? = null
 
     fun currentAccessToken(): String? = cachedAccessToken
+
+    /** Call once at app startup. If consent was granted in a previous session, attempts a silent
+     * refresh via [requestAuthorization] — per its own doc comment, that resolves with a fresh
+     * token and no UI when consent already exists. Does nothing if never authorized before. */
+    suspend fun restoreIfNeeded() {
+        if (prefs.getBoolean(KEY_WAS_AUTHORIZED, false)) {
+            requestAuthorization()
+        }
+    }
 
     /**
      * Call this to (re)authorize. If consent was already granted previously, this typically
@@ -74,6 +91,7 @@ class GoogleAuthorizationManager @Inject constructor(
             } else {
                 cachedAccessToken = result.accessToken
                 _isAuthorized.value = true
+                prefs.edit().putBoolean(KEY_WAS_AUTHORIZED, true).apply()
                 AuthorizationOutcome.Authorized
             }
         } catch (e: Exception) {
@@ -92,6 +110,7 @@ class GoogleAuthorizationManager @Inject constructor(
             val result = Identity.getAuthorizationClient(context).getAuthorizationResultFromIntent(data)
             cachedAccessToken = result.accessToken
             _isAuthorized.value = true
+            prefs.edit().putBoolean(KEY_WAS_AUTHORIZED, true).apply()
             AuthorizationOutcome.Authorized
         } catch (e: Exception) {
             Log.e("GoogleAuth", "handleAuthorizationResult failed: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -102,5 +121,6 @@ class GoogleAuthorizationManager @Inject constructor(
     fun clear() {
         cachedAccessToken = null
         _isAuthorized.value = false
+        prefs.edit().putBoolean(KEY_WAS_AUTHORIZED, false).apply()
     }
 }

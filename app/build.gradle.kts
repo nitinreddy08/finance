@@ -169,6 +169,10 @@ dependencies {
     // Authorization API: requests the drive.file/Sheets scope as a step separate from
     // Credential Manager sign-in, per spec §7.
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // Encrypted local storage for the persisted sign-in/authorization state — plain
+    // SharedPreferences is fine for the spreadsheet ID (GoogleSheetsRepository) but not for
+    // anything identity-adjacent.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }
 
 dependencies {
