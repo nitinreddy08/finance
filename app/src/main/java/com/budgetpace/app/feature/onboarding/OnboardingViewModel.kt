@@ -44,8 +44,7 @@ class OnboardingViewModel @Inject constructor(
     }
 
     fun completeOnboarding(
-        spendLimitMinor: Long,
-        categories: List<Pair<String, Long>>,
+        categories: List<CategoryEntry>,
         onDone: () -> Unit
     ) {
         if (_isSaving.value) return
@@ -65,14 +64,14 @@ class OnboardingViewModel @Inject constructor(
                 )
                 budgetMonthDao.insert(budgetMonth.toEntity())
 
-                categories.forEachIndexed { index, (name, budgetMinor) ->
+                categories.forEachIndexed { index, entry ->
                     val category = Category(
                         id = UUID.randomUUID(),
                         monthId = monthId,
-                        name = name,
-                        monthlyBudgetMinor = budgetMinor,
-                        weeklyPacingEnabled = true,
-                        iconKey = "default",
+                        name = entry.name,
+                        monthlyBudgetMinor = entry.budgetMinor,
+                        weeklyPacingEnabled = entry.weeklyPacingEnabled,
+                        iconKey = entry.iconKey,
                         sortOrder = index,
                         active = true,
                         createdAt = Instant.now(),
