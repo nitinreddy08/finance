@@ -1,4 +1,4 @@
-﻿package com.budgetpace.app.feature.onboarding
+package com.budgetpace.app.feature.onboarding
 
 import android.content.Intent
 import android.provider.Settings
@@ -388,7 +388,8 @@ fun OnboardingRoute(
                             val totalMinor = categories.sumOf { it.budgetMinor }
                             viewModel.completeOnboarding(
                                 spendLimitMinor = totalMinor,
-                                categories = categories.map { it.name to it.budgetMinor }
+                                categories = categories.map { it.name to it.budgetMinor },
+                                onDone = { onComplete() }
                             )
                         },
                         modifier = Modifier.fillMaxWidth().height(56.dp),

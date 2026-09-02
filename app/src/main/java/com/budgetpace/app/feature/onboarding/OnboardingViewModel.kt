@@ -29,8 +29,8 @@ class OnboardingViewModel @Inject constructor(
     private val _signInState = MutableStateFlow<Boolean?>(null)
     val signInState = _signInState.asStateFlow()
 
-    private val _onboardingComplete = MutableStateFlow(false)
-    val onboardingComplete = _onboardingComplete.asStateFlow()
+    private val _isSaving = MutableStateFlow(false)
+    val isSaving = _isSaving.asStateFlow()
 
     fun signInWithGoogle(context: Context) {
         viewModelScope.launch {
@@ -38,19 +38,23 @@ class OnboardingViewModel @Inject constructor(
                 val result = authRepository.signInWithGoogle(context)
                 _signInState.value = result.isSuccess
             } catch (e: Exception) {
-                // Google Sign-In not configured yet, skip gracefully
                 _signInState.value = false
             }
         }
     }
 
-    fun completeOnboarding(spendLimitMinor: Long, categories: List<Pair<String, Long>>) {
+    fun completeOnboarding(
+        spendLimitMinor: Long,
+        categories: List<Pair<String, Long>>,
+        onDone: () -> Unit
+    ) {
+        if (_isSaving.value) return
+        _isSaving.value = true
         viewModelScope.launch {
             try {
                 val monthId = UUID.randomUUID()
                 val now = LocalDate.now()
 
-                // Create active month
                 val budgetMonth = BudgetMonth(
                     id = monthId,
                     year = now.year,
@@ -61,7 +65,6 @@ class OnboardingViewModel @Inject constructor(
                 )
                 budgetMonthDao.insert(budgetMonth.toEntity())
 
-                // Insert each category with its individual budget
                 categories.forEachIndexed { index, (name, budgetMinor) ->
                     val category = Category(
                         id = UUID.randomUUID(),
@@ -78,10 +81,10 @@ class OnboardingViewModel @Inject constructor(
                     categoryDao.insert(category.toEntity())
                 }
 
-                _onboardingComplete.value = true
+                onDone()
             } catch (e: Exception) {
-                // Log error but don't crash
                 e.printStackTrace()
+                _isSaving.value = false
             }
         }
     }
