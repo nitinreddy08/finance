@@ -6,6 +6,13 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val localProperties = java.util.Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(java.io.FileInputStream(localPropertiesFile))
+}
+val googleClientId = localProperties.getProperty("GOOGLE_CLIENT_ID") ?: "\"YOUR_WEB_CLIENT_ID_HERE\""
+
 android {
     namespace = "com.budgetpace.app"
     compileSdk = 35
@@ -18,6 +25,7 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GOOGLE_CLIENT_ID", googleClientId)
     }
 
     buildTypes {
