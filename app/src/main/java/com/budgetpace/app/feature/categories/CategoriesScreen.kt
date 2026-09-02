@@ -294,6 +294,8 @@ fun CategoryFormDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 // Emoji picker — spec §4: the chosen icon appears beside the category everywhere.
+                // The curated row is a quick pick; the field below lets any emoji from the
+                // device's own keyboard be used instead, since 20 curated choices don't scale.
                 androidx.compose.foundation.lazy.LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -311,6 +313,15 @@ fun CategoryFormDialog(
                         }
                     }
                 }
+                OutlinedTextField(
+                    value = iconKey,
+                    // Emoji can be multiple UTF-16 code units (skin tones, ZWJ sequences) — cap
+                    // generously rather than truncating a single typed character in half.
+                    onValueChange = { iconKey = it.take(8) },
+                    label = { Text("Or type any emoji") },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 20.sp),
+                )
 
                 OutlinedTextField(
                     value = name,
