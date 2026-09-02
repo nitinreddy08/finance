@@ -42,7 +42,7 @@ object DuplicateDetector {
         return bytes.joinToString("") { "%02x".format(it) }
     }
     
-    fun getDuplicateKey(parsedTxn: ParsedTransaction): String? {
+    fun getDuplicateKey(parsedTxn: ParsedTransaction): String {
         if (parsedTxn.referenceNumber != null) {
             return "${parsedTxn.bank.name}:${parsedTxn.referenceNumber}"
         }

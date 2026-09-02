@@ -15,7 +15,9 @@ import com.budgetpace.app.data.local.entity.*
         CarryForwardEntity::class,
     ],
     version = 1,
-    exportSchema = true,
+    // No room.schemaLocation is configured (and nothing consumes exported schema files yet),
+    // so exporting just produces the "schema export directory was not provided" build warning.
+    exportSchema = false,
 )
 abstract class BudgetDatabase : RoomDatabase() {
 
