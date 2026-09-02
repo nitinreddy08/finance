@@ -24,9 +24,11 @@ import com.budgetpace.app.domain.auth.UserSession
 import com.budgetpace.app.domain.export.CsvExportService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -63,6 +65,11 @@ class SettingsViewModel @Inject constructor(
     val session: StateFlow<UserSession?> = authRepository.currentSession
     val isSheetsAuthorized: StateFlow<Boolean> = authorizationManager.isAuthorized
 
+    // A signal, not a state — see OnboardingViewModel's identical _signInError for why a plain
+    // StateFlow would silently drop a second failed attempt in a row.
+    private val _signInError = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val signInError = _signInError.asSharedFlow()
+
     private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
 
@@ -86,6 +93,17 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             authRepository.signOut()
             authorizationManager.clear()
+        }
+    }
+
+    /**
+     * Sign-in was previously only reachable from onboarding — if it failed or was skipped there,
+     * there was no way back in without reinstalling. Settings needs its own entry point too.
+     */
+    fun signInWithGoogle(context: Context) {
+        viewModelScope.launch {
+            val result = authRepository.signInWithGoogle(context)
+            if (result.isFailure) _signInError.tryEmit(Unit)
         }
     }
 

@@ -42,6 +42,14 @@ fun GoogleBackupRoute(
         viewModel.handleAuthorizationResult(result.data)
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.signInError.collect {
+            // Spec §61: never expose the raw exception — the real cause is logged via Log.e in
+            // AuthRepositoryImpl for diagnosis from logcat.
+            Toast.makeText(context, "Couldn't sign in with Google. Please try again.", Toast.LENGTH_LONG).show()
+        }
+    }
+
     LaunchedEffect(sheetsSyncState) {
         when (val state = sheetsSyncState) {
             is SheetsSyncState.Success -> {
@@ -79,8 +87,9 @@ fun GoogleBackupRoute(
             SettingsSectionHeader("ACCOUNT")
             SettingsMockupItem(
                 icon = "G",
-                title = session?.displayName ?: "Not signed in",
-                subtitle = session?.email ?: ""
+                title = session?.displayName ?: "Sign in with Google",
+                subtitle = session?.email ?: "Not signed in",
+                onClick = { if (session == null) viewModel.signInWithGoogle(context) },
             )
 
             SettingsSectionHeader("GOOGLE SHEETS")
