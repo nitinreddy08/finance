@@ -1,4 +1,4 @@
-package com.budgetpace.app.feature.onboarding
+﻿package com.budgetpace.app.feature.onboarding
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
@@ -29,46 +29,59 @@ class OnboardingViewModel @Inject constructor(
     private val _signInState = MutableStateFlow<Boolean?>(null)
     val signInState = _signInState.asStateFlow()
 
+    private val _onboardingComplete = MutableStateFlow(false)
+    val onboardingComplete = _onboardingComplete.asStateFlow()
+
     fun signInWithGoogle(context: Context) {
         viewModelScope.launch {
-            val result = authRepository.signInWithGoogle(context)
-            _signInState.value = result.isSuccess
+            try {
+                val result = authRepository.signInWithGoogle(context)
+                _signInState.value = result.isSuccess
+            } catch (e: Exception) {
+                // Google Sign-In not configured yet, skip gracefully
+                _signInState.value = false
+            }
         }
     }
 
-    fun completeOnboarding(incomeMinor: Long, selectedCategories: List<String>) {
+    fun completeOnboarding(spendLimitMinor: Long, categories: List<Pair<String, Long>>) {
         viewModelScope.launch {
-            val monthId = UUID.randomUUID()
-            val now = LocalDate.now()
-            
-            // Create active month
-            val budgetMonth = BudgetMonth(
-                id = monthId,
-                year = now.year,
-                month = now.monthValue,
-                status = MonthStatus.ACTIVE,
-                createdAt = Instant.now(),
-                archivedAt = null
-            )
-            budgetMonthDao.insert(budgetMonth.toEntity())
-            
-            // Allocate income roughly among categories for demo setup
-            val budgetPerCategory = if (selectedCategories.isNotEmpty()) incomeMinor / selectedCategories.size else 0L
-            
-            selectedCategories.forEachIndexed { index, name ->
-                val category = Category(
-                    id = UUID.randomUUID(),
-                    monthId = monthId,
-                    name = name,
-                    monthlyBudgetMinor = budgetPerCategory,
-                    weeklyPacingEnabled = true,
-                    iconKey = "default",
-                    sortOrder = index,
-                    active = true,
+            try {
+                val monthId = UUID.randomUUID()
+                val now = LocalDate.now()
+
+                // Create active month
+                val budgetMonth = BudgetMonth(
+                    id = monthId,
+                    year = now.year,
+                    month = now.monthValue,
+                    status = MonthStatus.ACTIVE,
                     createdAt = Instant.now(),
-                    updatedAt = Instant.now()
+                    archivedAt = null
                 )
-                categoryDao.insert(category.toEntity())
+                budgetMonthDao.insert(budgetMonth.toEntity())
+
+                // Insert each category with its individual budget
+                categories.forEachIndexed { index, (name, budgetMinor) ->
+                    val category = Category(
+                        id = UUID.randomUUID(),
+                        monthId = monthId,
+                        name = name,
+                        monthlyBudgetMinor = budgetMinor,
+                        weeklyPacingEnabled = true,
+                        iconKey = "default",
+                        sortOrder = index,
+                        active = true,
+                        createdAt = Instant.now(),
+                        updatedAt = Instant.now()
+                    )
+                    categoryDao.insert(category.toEntity())
+                }
+
+                _onboardingComplete.value = true
+            } catch (e: Exception) {
+                // Log error but don't crash
+                e.printStackTrace()
             }
         }
     }
