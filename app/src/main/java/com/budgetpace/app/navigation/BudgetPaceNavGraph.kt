@@ -17,6 +17,7 @@ import com.budgetpace.app.feature.transactions.AddTransactionRoute
 import com.budgetpace.app.feature.transactions.AddTransactionViewModel
 import com.budgetpace.app.feature.categories.CategoriesRoute
 import com.budgetpace.app.feature.categories.CategoriesViewModel
+import com.budgetpace.app.feature.categories.CategoryDetailRoute
 import com.budgetpace.app.feature.settings.SettingsRoute
 
 sealed class Screen(val route: String) {
@@ -28,6 +29,9 @@ sealed class Screen(val route: String) {
     }
     object AddTransaction : Screen("transactions/add")
     object Categories : Screen("categories")
+    object CategoryDetail : Screen("categories/{id}") {
+        fun createRoute(id: String) = "categories/$id"
+    }
     object Settings : Screen("settings")
 }
 
@@ -52,6 +56,7 @@ fun BudgetPaceNavGraph(
             val viewModel = hiltViewModel<DashboardViewModel>()
             DashboardRoute(
                 viewModel = viewModel,
+                onCategoryClick = { id -> navController.navigate(Screen.CategoryDetail.createRoute(id)) },
             )
         }
         
@@ -91,9 +96,20 @@ fun BudgetPaceNavGraph(
             CategoriesRoute(
                 viewModel = viewModel,
                 onBack = { navController.navigateUp() },
+                onCategoryClick = { id -> navController.navigate(Screen.CategoryDetail.createRoute(id)) },
             )
         }
-        
+
+        composable(Screen.CategoryDetail.route) { backStackEntry ->
+            val id = backStackEntry.arguments?.getString("id") ?: return@composable
+            val viewModel = hiltViewModel<CategoriesViewModel>()
+            CategoryDetailRoute(
+                viewModel = viewModel,
+                categoryId = id,
+                onBack = { navController.navigateUp() },
+            )
+        }
+
         composable(Screen.Settings.route) {
             SettingsRoute(
                 onBack = { navController.navigateUp() }

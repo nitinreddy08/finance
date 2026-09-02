@@ -37,8 +37,12 @@ import com.budgetpace.app.data.local.mapper.toEntity
 import com.budgetpace.app.domain.repository.BudgetRepository
 import com.budgetpace.app.feature.transactions.CategoryPickerDialog
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -105,6 +109,14 @@ class CategoriesViewModel @Inject constructor(
     suspend fun transactionsForCategory(categoryId: String): List<Transaction> =
         transactionDao.getByCategory(categoryId).map { it.toDomain() }
 
+    /** Reactive transaction list for Category Detail — reflects edits/deletes without renavigating. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeCategoryTransactions(categoryId: String): Flow<List<Transaction>> =
+        budgetMonthDao.observeActiveMonth()
+            .filterNotNull()
+            .flatMapLatest { month -> transactionDao.observeByMonthAndCategory(month.id, categoryId) }
+            .map { list -> list.map { it.toDomain() } }
+
     /** Spec §45: never silently delete transactions — move them all, then deactivate the category. */
     fun moveAllAndDeactivate(categoryId: String, targetCategoryId: String) {
         viewModelScope.launch {
@@ -152,12 +164,10 @@ sealed interface CategoriesUiState {
 fun CategoriesRoute(
     viewModel: CategoriesViewModel,
     onBack: () -> Unit,
+    onCategoryClick: (String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
-    var manageCategory by remember { mutableStateOf<CategorySummary?>(null) }
-    var editCategory by remember { mutableStateOf<CategorySummary?>(null) }
-    var deleteCategory by remember { mutableStateOf<CategorySummary?>(null) }
 
     val categories = (uiState as? CategoriesUiState.Success)?.categories ?: emptyList()
 
@@ -202,7 +212,9 @@ fun CategoriesRoute(
                     CategoriesList(
                         categories = state.categories,
                         modifier = Modifier.padding(innerPadding),
-                        onCategoryClick = { manageCategory = it }
+                        // Spec §7: tapping a category opens Category Detail, not an action sheet —
+                        // Edit/Delete now live inside that screen instead.
+                        onCategoryClick = { onCategoryClick(it.category.id.toString()) }
                     )
                 }
             }
@@ -229,59 +241,10 @@ fun CategoriesRoute(
         )
     }
 
-    editCategory?.let { target ->
-        CategoryFormDialog(
-            title = "Edit category",
-            initialName = target.category.name,
-            initialBudget = (target.category.monthlyBudgetMinor / 100).toString(),
-            initialWeeklyPacing = target.category.weeklyPacingEnabled,
-            initialIconKey = target.category.iconKey.ifBlank { CATEGORY_EMOJI_CHOICES.first() },
-            onDismiss = { editCategory = null },
-            onConfirm = { name, budgetMinor, weeklyPacing, iconKey ->
-                viewModel.updateCategory(target.category.id.toString(), name, budgetMinor, weeklyPacing, iconKey)
-                editCategory = null
-            }
-        )
-    }
-
-    manageCategory?.let { target ->
-        AlertDialog(
-            onDismissRequest = { manageCategory = null },
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onBackground,
-            title = { Text(target.category.name) },
-            text = { Text("What would you like to do?", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-            confirmButton = {
-                TextButton(onClick = { editCategory = target; manageCategory = null }) {
-                    Text("Edit", color = Color(0xFF4CAF50))
-                }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = { deleteCategory = target; manageCategory = null }) {
-                        Text("Delete", color = Color(0xFFF44336))
-                    }
-                    TextButton(onClick = { manageCategory = null }) {
-                        Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-        )
-    }
-
-    deleteCategory?.let { target ->
-        DeleteCategoryFlow(
-            category = target.category,
-            otherCategories = categories.map { it.category }.filter { it.id != target.category.id },
-            viewModel = viewModel,
-            onDone = { deleteCategory = null },
-            onCancel = { deleteCategory = null },
-        )
-    }
 }
 
 @Composable
-private fun CategoryFormDialog(
+fun CategoryFormDialog(
     title: String,
     initialName: String,
     initialBudget: String,
@@ -401,7 +364,7 @@ private fun PacingOption(
 
 /** Spec §45: delete confirmation -> move-all or per-transaction selection, never a silent delete. */
 @Composable
-private fun DeleteCategoryFlow(
+fun DeleteCategoryFlow(
     category: Category,
     otherCategories: List<Category>,
     viewModel: CategoriesViewModel,

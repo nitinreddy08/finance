@@ -1,6 +1,7 @@
 package com.budgetpace.app.feature.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -32,7 +33,8 @@ import java.util.Locale
 
 @Composable
 fun DashboardRoute(
-    viewModel: DashboardViewModel
+    viewModel: DashboardViewModel,
+    onCategoryClick: (String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -43,7 +45,7 @@ fun DashboardRoute(
             }
         }
         is DashboardUiState.Success -> {
-            DashboardScreen(summary = state.summary)
+            DashboardScreen(summary = state.summary, onCategoryClick = onCategoryClick)
         }
         is DashboardUiState.Error -> {
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
@@ -59,7 +61,7 @@ fun DashboardRoute(
  * 4-segment pace bar, and a compact cross-category chart.
  */
 @Composable
-fun DashboardScreen(summary: MonthSummary) {
+fun DashboardScreen(summary: MonthSummary, onCategoryClick: (String) -> Unit = {}) {
     val monthName = Month.of(summary.month.month).getDisplayName(TextStyle.FULL, Locale.getDefault())
     val currentPeriod = summary.overallPeriods.firstOrNull { it.isCurrentPeriod }
     val overageMinor = currentPeriod?.overageMinor ?: 0L
@@ -199,7 +201,10 @@ fun DashboardScreen(summary: MonthSummary) {
                 verticalAlignment = Alignment.Top
             ) {
                 items(summary.categories) { categorySummary ->
-                    CategoryPaceItem(summary = categorySummary)
+                    CategoryPaceItem(
+                        summary = categorySummary,
+                        onClick = { onCategoryClick(categorySummary.category.id.toString()) },
+                    )
                 }
             }
         }
@@ -239,7 +244,7 @@ private fun PaceSegment(period: PeriodSummary, modifier: Modifier = Modifier) {
 
 /** Spec §5: emoji, a compact scaled mark, amount, and percent — one column per category. */
 @Composable
-private fun CategoryPaceItem(summary: CategorySummary) {
+private fun CategoryPaceItem(summary: CategorySummary, onClick: () -> Unit) {
     val ratio = if (summary.category.monthlyBudgetMinor > 0)
         summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor
     else 0f
@@ -249,7 +254,9 @@ private fun CategoryPaceItem(summary: CategorySummary) {
     val color = statusColor(summary.overallStatus)
 
     Column(
-        modifier = Modifier.width(56.dp),
+        modifier = Modifier
+            .width(56.dp)
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         CategoryIcon(iconKey = summary.category.iconKey, name = summary.category.name, size = 28.dp)

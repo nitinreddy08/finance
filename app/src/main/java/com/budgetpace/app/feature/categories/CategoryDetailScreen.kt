@@ -1,0 +1,293 @@
+package com.budgetpace.app.feature.categories
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budgetpace.app.core.designsystem.components.CategoryIcon
+import com.budgetpace.app.core.model.BudgetStatus
+import com.budgetpace.app.core.model.CategorySummary
+import com.budgetpace.app.core.model.PeriodStatus
+import com.budgetpace.app.core.model.PeriodSummary
+import com.budgetpace.app.core.model.Transaction
+import com.budgetpace.app.core.money.Money
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/**
+ * Spec §7/§10: tapping a category anywhere (Home's Category Pace, or the Categories list) lands
+ * here first — Edit/Delete are reached from within this screen rather than an action sheet.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CategoryDetailRoute(
+    viewModel: CategoriesViewModel,
+    categoryId: String,
+    onBack: () -> Unit,
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val summary = (uiState as? CategoriesUiState.Success)?.categories
+        ?.firstOrNull { it.category.id.toString() == categoryId }
+
+    val transactions by remember(categoryId) { viewModel.observeCategoryTransactions(categoryId) }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val otherCategories = (uiState as? CategoriesUiState.Success)?.categories
+        ?.map { it.category }
+        ?.filter { it.id.toString() != categoryId }
+        ?: emptyList()
+
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteFlow by remember { mutableStateOf(false) }
+
+    // Once the category is gone (deleted, or not found), leave the screen — there's nothing left
+    // to show. Loading is a separate, transient state and must not trigger this.
+    val notFound = uiState is CategoriesUiState.Success && summary == null
+    LaunchedEffect(notFound) {
+        if (notFound) onBack()
+    }
+    if (notFound) return
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(summary?.category?.name ?: "", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { showEditDialog = true }) {
+                        Text("Edit", color = Color(0xFF4CAF50), style = MaterialTheme.typography.labelLarge)
+                    }
+                    IconButton(onClick = { showDeleteFlow = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete category", tint = Color(0xFFF44336))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                )
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { innerPadding ->
+        summary?.let {
+            CategoryDetailBody(
+                summary = it,
+                transactions = transactions,
+                modifier = Modifier.padding(innerPadding)
+            )
+        }
+    }
+
+    if (showEditDialog && summary != null) {
+        CategoryFormDialog(
+            title = "Edit category",
+            initialName = summary.category.name,
+            initialBudget = (summary.category.monthlyBudgetMinor / 100).toString(),
+            initialWeeklyPacing = summary.category.weeklyPacingEnabled,
+            initialIconKey = summary.category.iconKey.ifBlank { com.budgetpace.app.core.designsystem.components.CATEGORY_EMOJI_CHOICES.first() },
+            onDismiss = { showEditDialog = false },
+            onConfirm = { name, budgetMinor, weeklyPacing, iconKey ->
+                viewModel.updateCategory(categoryId, name, budgetMinor, weeklyPacing, iconKey)
+                showEditDialog = false
+            }
+        )
+    }
+
+    if (showDeleteFlow && summary != null) {
+        DeleteCategoryFlow(
+            category = summary.category,
+            otherCategories = otherCategories,
+            viewModel = viewModel,
+            onDone = { showDeleteFlow = false; onBack() },
+            onCancel = { showDeleteFlow = false },
+        )
+    }
+}
+
+@Composable
+private fun CategoryDetailBody(
+    summary: CategorySummary,
+    transactions: List<Transaction>,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CategoryIcon(iconKey = summary.category.iconKey, name = summary.category.name, size = 56.dp)
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = summary.category.name,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = if (summary.category.weeklyPacingEnabled) "4 periods" else "Start of month",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        val pct = if (summary.category.monthlyBudgetMinor > 0)
+            (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor * 100).toInt().coerceAtLeast(0)
+        else 0
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            LabeledAmount("Spent", Money.formatRupeesWhole(summary.totalSpentMinor))
+            LabeledAmount("Budget", Money.formatRupeesWhole(summary.category.monthlyBudgetMinor))
+            LabeledAmount("Used", "$pct%")
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (summary.category.weeklyPacingEnabled) {
+            Text(
+                text = "PERIODS",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                summary.periods.forEach { period ->
+                    PeriodBar(period = period, modifier = Modifier.weight(1f))
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        Text(
+            text = "TRANSACTIONS",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        if (transactions.isEmpty()) {
+            Text(
+                text = "No transactions in this category yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+        } else {
+            transactions.forEach { transaction ->
+                CategoryTransactionRow(transaction)
+                Divider(color = MaterialTheme.colorScheme.outline)
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun LabeledAmount(label: String, value: String) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(value, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onBackground)
+    }
+}
+
+/** Bars only — spec's minimal-wording rule keeps "Current/Upcoming/Completed" out of the UI. */
+@Composable
+private fun PeriodBar(period: PeriodSummary, modifier: Modifier = Modifier) {
+    val color = when (period.paceStatus) {
+        BudgetStatus.GREEN -> Color(0xFF4CAF50)
+        BudgetStatus.ORANGE -> Color(0xFFFF9800)
+        BudgetStatus.RED -> Color(0xFFF44336)
+        BudgetStatus.GREY -> MaterialTheme.colorScheme.outline
+        BudgetStatus.CURRENT -> Color(0xFF64B5F6)
+    }
+    val filled = if (period.periodStatus == PeriodStatus.UPCOMING || period.effectiveBudgetMinor <= 0) 0f
+    else (period.spentMinor.toFloat() / period.effectiveBudgetMinor).coerceIn(0f, 1f)
+    val statusDescription = when (period.periodStatus) {
+        PeriodStatus.UPCOMING -> "upcoming"
+        PeriodStatus.CURRENT -> "current"
+        PeriodStatus.COMPLETED -> "completed"
+    }
+
+    Column(
+        modifier = modifier.semantics {
+            contentDescription = "Period ${period.periodIndex + 1}, $statusDescription, " +
+                "${Money.formatRupeesWhole(period.spentMinor)} of ${Money.formatRupeesWhole(period.effectiveBudgetMinor)}"
+        },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(filled)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color)
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = if (period.periodStatus == PeriodStatus.UPCOMING) "—" else Money.formatRupeesWhole(period.spentMinor),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun CategoryTransactionRow(transaction: Transaction) {
+    val payee = transaction.recipient ?: transaction.sender ?: "Uncategorized"
+    val time = transaction.transactionDateTime?.atZone(ZoneId.systemDefault())
+        ?.format(DateTimeFormatter.ofPattern("d MMM, hh:mm a")) ?: transaction.transactionDate.toString()
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(payee, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+            Text(time, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(
+            Money.formatRupeesWhole(transaction.amountMinor),
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onBackground
+        )
+    }
+}
