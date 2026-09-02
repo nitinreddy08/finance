@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 @HiltViewModel
@@ -16,18 +17,18 @@ class DashboardViewModel @Inject constructor(
     private val budgetRepository: BudgetRepository
 ) : ViewModel() {
 
-    // For Phase 1, we observe a hardcoded "ACTIVE" month or first month
-    // In actual implementation, we would query the active month ID
-    
-    // Using dummy ID for the sample data seeded in BudgetDatabase
     private val activeMonthId = MutableStateFlow<String?>(null)
     
     val uiState: StateFlow<DashboardUiState> = budgetRepository.observeActiveMonthSummary()
+        .map { summary ->
+            if (summary == null) DashboardUiState.Error
+            else DashboardUiState.Success(summary)
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = DashboardUiState.Loading
-        ) as StateFlow<DashboardUiState>
+        )
 }
 
 sealed interface DashboardUiState {
