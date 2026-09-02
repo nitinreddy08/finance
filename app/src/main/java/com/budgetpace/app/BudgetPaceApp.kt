@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import androidx.work.WorkManager
 import com.budgetpace.app.notification.presenter.CategorizationNotificationManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -25,6 +26,10 @@ class BudgetPaceApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        // WorkManager's normal auto-init (a ContentProvider) runs before this onCreate — before
+        // Hilt has injected workerFactory above — and is disabled in the manifest for exactly
+        // that reason. Initialize it manually here instead, now that workerFactory is set.
+        WorkManager.initialize(this, workManagerConfiguration)
         createCategorizationChannel()
     }
 
