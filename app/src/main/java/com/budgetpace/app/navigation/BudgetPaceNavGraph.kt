@@ -34,7 +34,7 @@ sealed class Screen(val route: String) {
 @Composable
 fun BudgetPaceNavGraph(
     navController: NavHostController = rememberNavController(),
-    startDestination: String = Screen.Dashboard.route // Skip onboarding by default for testing
+    startDestination: String = Screen.Onboarding.route
 ) {
     NavHost(
         navController = navController,
