@@ -101,12 +101,17 @@ object BudgetEngine {
     ): CategorySummary {
         val totalSpentMinor = transactions.filter { it.direction == TransactionDirection.DEBIT }.sumOf { it.amountMinor }
 
-        // Per spec §24/§31: a category with weeklyPacingEnabled = false (e.g. Rent) still
-        // participates in the overall monthly budget/spending/pace with its fair per-period
-        // share — only its OWN four-tile breakdown is hidden in the UI (category.weeklyPacingEnabled
-        // is the flag the UI reads for that). Dumping the whole budget into period 0 here would
-        // wrongly inflate period 0 and starve periods 1-3 of the overall four-period pace.
-        val periodBudgets = PeriodCalculator.splitBudget(category.monthlyBudgetMinor, periods)
+        // A category with weeklyPacingEnabled = false ("spend at start of month", e.g. Rent)
+        // puts its ENTIRE budget in period 0, not a proportional slice of it — choosing that
+        // pacing means the user intends to spend it all upfront, not have it metered across the
+        // month. Splitting it proportionally would misrepresent "safe to spend this week" in
+        // later periods by counting an as-yet-unspent slice of a bill that was never meant to be
+        // paced out at all.
+        val periodBudgets = if (category.weeklyPacingEnabled) {
+            PeriodCalculator.splitBudget(category.monthlyBudgetMinor, periods)
+        } else {
+            LongArray(periods.size) { index -> if (index == 0) category.monthlyBudgetMinor else 0L }
+        }
         
         val periodSummaries = periods.map { period ->
             val periodSpent = transactions

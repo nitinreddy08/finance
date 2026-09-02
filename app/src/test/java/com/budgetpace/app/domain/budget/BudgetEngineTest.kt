@@ -34,13 +34,13 @@ class BudgetEngineTest {
 
         val catSummary = summary.categories.first()
 
-        // Per spec §24/§31: weeklyPacingEnabled=false only hides the category's OWN four-tile
-        // breakdown in the UI — it must still participate fairly in the overall four-period pace,
-        // so its period budgets are still split proportionally (Sep 2026 = 30 days -> 8/7/8/7).
-        assertEquals(240000L, catSummary.periods[0].baseBudgetMinor)
-        assertEquals(210000L, catSummary.periods[1].baseBudgetMinor)
-        assertEquals(240000L, catSummary.periods[2].baseBudgetMinor)
-        assertEquals(210000L, catSummary.periods[3].baseBudgetMinor)
+        // weeklyPacingEnabled=false ("spend at start of month") puts the ENTIRE budget in
+        // period 0 — choosing this pacing means the user intends to spend it all upfront (e.g.
+        // Rent), not have it metered across the month.
+        assertEquals(9000_00L, catSummary.periods[0].baseBudgetMinor)
+        assertEquals(0L, catSummary.periods[1].baseBudgetMinor)
+        assertEquals(0L, catSummary.periods[2].baseBudgetMinor)
+        assertEquals(0L, catSummary.periods[3].baseBudgetMinor)
         assertEquals(9000_00L, catSummary.periods.sumOf { it.baseBudgetMinor })
 
         // Spent should be registered
@@ -49,9 +49,11 @@ class BudgetEngineTest {
     }
 
     @Test
-    fun testOverallPaceIncludesNonPacingCategoryProportionally() {
-        // A category with weeklyPacingEnabled = false (e.g. Rent) must still contribute its fair
-        // share to every overall period's budget, not just period 0 (spec §26/§31).
+    fun testNonPacingCategoryOnlyContributesToPeriodZero() {
+        // A "start of month" category (e.g. Rent) contributes its entire budget to overall
+        // period 0 only — later periods' overall budget must come only from pacing categories,
+        // so Rent doesn't inflate "safe to spend" in later weeks for money that was never meant
+        // to be paced out.
         val monthId = UUID.randomUUID()
         val rentId = UUID.randomUUID()
         val fruitsId = UUID.randomUUID()
@@ -64,11 +66,15 @@ class BudgetEngineTest {
             month, listOf(rent, fruits), emptyList(), emptyList(), LocalDate.of(2026, 9, 2)
         )
 
-        // Overall period 1 budget = Rent's period-1 share (210000) + Fruits' period-1 share.
+        // Overall period 1 budget is only Fruits' share now — Rent contributes nothing here.
         val fruitsPeriod1 = summary.categories.first { it.category.id == fruitsId }.periods[1].baseBudgetMinor
-        assertEquals(210000L + fruitsPeriod1, summary.overallPeriods[1].baseBudgetMinor)
+        assertEquals(fruitsPeriod1, summary.overallPeriods[1].baseBudgetMinor)
 
-        // Total across all four overall periods must equal the combined monthly budget.
+        // Overall period 0 gets Rent's full 9000 plus Fruits' own period-0 share.
+        val fruitsPeriod0 = summary.categories.first { it.category.id == fruitsId }.periods[0].baseBudgetMinor
+        assertEquals(9000_00L + fruitsPeriod0, summary.overallPeriods[0].baseBudgetMinor)
+
+        // Total across all four overall periods must still equal the combined monthly budget.
         assertEquals(10000_00L, summary.overallPeriods.sumOf { it.baseBudgetMinor })
     }
 
@@ -152,12 +158,11 @@ class BudgetEngineTest {
 
     @Test
     fun testSafeToSpendWithNoSpending() {
-        // Sep 2026 (30 days) splits 8/7/8/7 — period 0 gets 8/30 of the budget. Confirmed by
-        // testCategorySummaryNoWeeklyPacing's 900000 -> 240000 split; reused here.
+        // Sep 2026 (30 days) splits 8/7/8/7 — a pacing category's period 0 gets 8/30 of budget.
         val monthId = UUID.randomUUID()
         val catId = UUID.randomUUID()
         val month = BudgetMonth(monthId, 2026, 9, MonthStatus.ACTIVE, Instant.now(), null)
-        val category = Category(catId, monthId, "Rent", 9000_00L, false, "icon", 0, true, Instant.now(), Instant.now())
+        val category = Category(catId, monthId, "Groceries", 9000_00L, true, "icon", 0, true, Instant.now(), Instant.now())
 
         val summary = BudgetEngine.calculateMonthSummary(month, listOf(category), emptyList(), emptyList(), LocalDate.of(2026, 9, 1))
 
@@ -171,7 +176,7 @@ class BudgetEngineTest {
         val monthId = UUID.randomUUID()
         val catId = UUID.randomUUID()
         val month = BudgetMonth(monthId, 2026, 9, MonthStatus.ACTIVE, Instant.now(), null)
-        val category = Category(catId, monthId, "Rent", 9000_00L, false, "icon", 0, true, Instant.now(), Instant.now())
+        val category = Category(catId, monthId, "Groceries", 9000_00L, true, "icon", 0, true, Instant.now(), Instant.now())
 
         // Period 0 (days 1-8) has a 240000 share; spend more than that within period 0.
         val transactions = listOf(
@@ -191,6 +196,21 @@ class BudgetEngineTest {
 
         // Overspent the current period -> safe-to-spend floors at 0, never negative.
         assertEquals(0L, summary.safeToSpendMinor)
+    }
+
+    @Test
+    fun testSafeToSpendReflectsFullStartOfMonthBudgetInPeriodZero() {
+        // Rent (start-of-month pacing) sits entirely in period 0 now — with nothing spent yet,
+        // safe-to-spend should reflect the whole 9000, not a proportional slice of it.
+        val monthId = UUID.randomUUID()
+        val catId = UUID.randomUUID()
+        val month = BudgetMonth(monthId, 2026, 9, MonthStatus.ACTIVE, Instant.now(), null)
+        val category = Category(catId, monthId, "Rent", 9000_00L, false, "icon", 0, true, Instant.now(), Instant.now())
+
+        val summary = BudgetEngine.calculateMonthSummary(month, listOf(category), emptyList(), emptyList(), LocalDate.of(2026, 9, 1))
+
+        assertEquals(9000_00L, summary.categories.first().periods[0].baseBudgetMinor)
+        assertEquals(9000_00L, summary.safeToSpendMinor)
     }
 
     @Test
