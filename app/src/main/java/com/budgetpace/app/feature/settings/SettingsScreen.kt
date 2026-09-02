@@ -1,6 +1,7 @@
 package com.budgetpace.app.feature.settings
 
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +29,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budgetpace.app.core.designsystem.theme.ThemeMode
+
+private const val DEVELOPER_EMAIL = "nitinreddy.nv@gmail.com"
 
 fun isNotificationListenerEnabled(context: android.content.Context): Boolean =
     NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
@@ -198,8 +201,17 @@ fun SettingsScreen(
 
         item {
             SettingsSectionHeader("ABOUT")
-            SettingsMockupItem(icon = "ℹ", title = "Privacy", subtitle = "")
-            SettingsMockupItem(icon = "📦", title = "About Budget Pace", subtitle = "v1.0")
+            SettingsMockupItem(
+                icon = "👤",
+                title = "Nitin Reddy N V",
+                subtitle = DEVELOPER_EMAIL,
+                onClick = {
+                    val intent = Intent(Intent.ACTION_SENDTO).apply {
+                        data = Uri.parse("mailto:$DEVELOPER_EMAIL")
+                    }
+                    context.startActivity(intent)
+                },
+            )
         }
     }
 }

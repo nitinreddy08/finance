@@ -137,6 +137,23 @@ class SettingsViewModel @Inject constructor(
     fun syncNow() {
         viewModelScope.launch {
             _sheetsSyncState.value = SheetsSyncState.Syncing
+
+            // The access token from an earlier authorization can go stale by the time the user
+            // taps this — GoogleSheetsSyncWorker already refreshes it before every background
+            // sync, but this manual path never did, so a perfectly-successful "Connect Google
+            // Sheets" could still leave later manual syncs failing with a stale token.
+            when (val outcome = authorizationManager.requestAuthorization(session.value?.email)) {
+                is AuthorizationOutcome.Authorized -> Unit
+                is AuthorizationOutcome.NeedsConsent -> {
+                    _sheetsSyncState.value = SheetsSyncState.Error("Google Sheets needs to be reconnected.")
+                    return@launch
+                }
+                is AuthorizationOutcome.Failed -> {
+                    _sheetsSyncState.value = SheetsSyncState.Error(outcome.message)
+                    return@launch
+                }
+            }
+
             val workbook = sheetsRepository.ensureWorkbook()
             if (workbook.isFailure) {
                 _sheetsSyncState.value = SheetsSyncState.Error(

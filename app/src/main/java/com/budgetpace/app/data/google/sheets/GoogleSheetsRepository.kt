@@ -1,6 +1,7 @@
 package com.budgetpace.app.data.google.sheets
 
 import android.content.Context
+import android.util.Log
 import com.budgetpace.app.core.model.Transaction
 import com.budgetpace.app.data.google.auth.GoogleAuthorizationManager
 import com.budgetpace.app.data.local.dao.CategoryDao
@@ -99,6 +100,7 @@ class GoogleSheetsRepository @Inject constructor(
             spreadsheetId = id
             Result.success(id)
         } catch (e: Exception) {
+            Log.e("GoogleSheetsRepository", "ensureWorkbook failed: ${e.javaClass.simpleName}: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -168,6 +170,7 @@ class GoogleSheetsRepository @Inject constructor(
             prefs.edit().putLong(KEY_LAST_SYNC_AT, System.currentTimeMillis()).apply()
             Result.success(syncedCount)
         } catch (e: Exception) {
+            Log.e("GoogleSheetsRepository", "syncPendingTransactions failed: ${e.javaClass.simpleName}: ${e.message}", e)
             Result.failure(e)
         }
     }
