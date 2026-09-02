@@ -57,8 +57,9 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            // Force dark theme as per the high-fidelity mockups
-            BudgetPaceTheme(darkTheme = true) {
+            // Follow the system light/dark setting (BudgetPaceTheme defaults to
+            // isSystemInDarkTheme()); both palettes are defined per spec §38.
+            BudgetPaceTheme {
                 val appStartViewModel = hiltViewModel<AppStartViewModel>()
                 val isOnboarded by appStartViewModel.isOnboarded.collectAsStateWithLifecycle()
 
@@ -127,8 +128,10 @@ private fun AppShell(
                 FloatingActionButton(
                     onClick = { navController.navigate(Screen.AddTransaction.route) },
                     shape = CircleShape,
-                    containerColor = Color(0xFF2A2D35), // Dark grey from mockup
-                    contentColor = Color.White,
+                    // Inverse-surface role: the FAB should read as a solid, high-contrast chip
+                    // against the background in both themes, not a subtle border tint.
+                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
                     elevation = FloatingActionButtonDefaults.elevation(0.dp)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Transaction")
@@ -154,8 +157,8 @@ private fun AppShell(
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Color(0xFF4CAF50), // Green accent from mockup
                             selectedTextColor = Color(0xFF4CAF50),
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             indicatorColor = Color.Transparent
                         )
                     )
@@ -165,10 +168,10 @@ private fun AppShell(
                         icon = { Icon(Icons.Default.List, contentDescription = "Transactions") },
                         label = { Text("Transactions") },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray,
+                            selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                            selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             indicatorColor = Color.Transparent
                         )
                     )
@@ -187,10 +190,10 @@ private fun AppShell(
                         icon = { Icon(Icons.Default.GridView, contentDescription = "Categories") },
                         label = { Text("Categories") },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray,
+                            selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                            selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             indicatorColor = Color.Transparent
                         )
                     )
@@ -200,10 +203,10 @@ private fun AppShell(
                         icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
                         label = { Text("Settings") },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            unselectedIconColor = Color.Gray,
-                            unselectedTextColor = Color.Gray,
+                            selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                            selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             indicatorColor = Color.Transparent
                         )
                     )

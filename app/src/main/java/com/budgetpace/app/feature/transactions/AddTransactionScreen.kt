@@ -132,7 +132,7 @@ fun AddTransactionRoute(
                 title = { Text("Add Transaction", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
@@ -145,12 +145,12 @@ fun AddTransactionRoute(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF15161A),
-                    titleContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
                 )
             )
         },
-        containerColor = Color(0xFF15161A)
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -164,7 +164,7 @@ fun AddTransactionRoute(
                     modifier = Modifier.weight(1f).clickable { selectedTab = "Expense" }.padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Expense", color = if (expenseSelected) Color.White else Color.Gray, fontWeight = if (expenseSelected) FontWeight.Bold else FontWeight.Normal)
+                    Text("Expense", color = if (expenseSelected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (expenseSelected) FontWeight.Bold else FontWeight.Normal)
                     Spacer(modifier = Modifier.height(12.dp))
                     Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(if (expenseSelected) Color(0xFFF44336) else Color.Transparent))
                 }
@@ -173,31 +173,31 @@ fun AddTransactionRoute(
                     modifier = Modifier.weight(1f).clickable { selectedTab = "Income" }.padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Income", color = if (incomeSelected) Color.White else Color.Gray, fontWeight = if (incomeSelected) FontWeight.Bold else FontWeight.Normal)
+                    Text("Income", color = if (incomeSelected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (incomeSelected) FontWeight.Bold else FontWeight.Normal)
                     Spacer(modifier = Modifier.height(12.dp))
                     Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(if (incomeSelected) Color(0xFF4CAF50) else Color.Transparent))
                 }
             }
 
-            Divider(color = Color(0xFF2A2D35))
+            Divider(color = MaterialTheme.colorScheme.outline)
 
             Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
 
                 // Amount
                 Column {
-                    Text("Amount", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Text("Amount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TextField(
                         value = amount,
                         onValueChange = { amount = it },
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = MaterialTheme.typography.headlineSmall.copy(color = Color.White),
-                        prefix = { Text("₹ ", style = MaterialTheme.typography.headlineSmall, color = Color.Gray) },
+                        textStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onBackground),
+                        prefix = { Text("₹ ", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
                             unfocusedContainerColor = Color.Transparent,
                             focusedIndicatorColor = Color(0xFF4CAF50),
-                            unfocusedIndicatorColor = Color(0xFF2A2D35),
+                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
                         ),
                         placeholder = { Text("0", style = MaterialTheme.typography.headlineSmall, color = Color.DarkGray) }
                     )
@@ -210,13 +210,13 @@ fun AddTransactionRoute(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Date", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(todayLabel, style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                        Text(todayLabel, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                     }
-                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color.Gray)
+                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Divider(color = Color(0xFF2A2D35))
+                Divider(color = MaterialTheme.colorScheme.outline)
 
                 // Category
                 Row(
@@ -227,17 +227,17 @@ fun AddTransactionRoute(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Category", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("Category", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             selectedCategory?.name ?: "Select category",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = if (selectedCategory != null) Color.White else Color.Gray
+                            color = if (selectedCategory != null) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Icon(Icons.Default.ChevronRight, contentDescription = "Select Category", tint = Color.Gray)
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Select Category", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Divider(color = Color(0xFF2A2D35))
+                Divider(color = MaterialTheme.colorScheme.outline)
 
                 // Payment Method — always Cash for manually-entered transactions (spec §11/§22)
                 Row(
@@ -246,28 +246,28 @@ fun AddTransactionRoute(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Payment Method", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("Payment Method", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("Cash", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                        Text("Cash", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                     }
                 }
-                Divider(color = Color(0xFF2A2D35))
+                Divider(color = MaterialTheme.colorScheme.outline)
 
                 // Note
                 Column {
-                    Text("Note (optional)", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Text("Note (optional)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TextField(
                         value = note,
                         onValueChange = { note = it },
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
                             unfocusedContainerColor = Color.Transparent,
                             focusedIndicatorColor = Color(0xFF4CAF50),
-                            unfocusedIndicatorColor = Color(0xFF2A2D35),
+                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
                         ),
-                        placeholder = { Text("Add a note", style = MaterialTheme.typography.bodyLarge, color = Color.Gray) }
+                        placeholder = { Text("Add a note", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     )
                 }
             }

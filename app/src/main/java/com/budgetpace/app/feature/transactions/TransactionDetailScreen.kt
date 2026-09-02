@@ -121,7 +121,7 @@ fun TransactionDetailRoute(
                 title = { Text("Transaction Details", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
@@ -137,16 +137,16 @@ fun TransactionDetailRoute(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF15161A),
-                    titleContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
                 )
             )
         },
-        containerColor = Color(0xFF15161A)
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         when (val state = uiState) {
             is TransactionDetailUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize().padding(innerPadding).background(Color(0xFF15161A)), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxSize().padding(innerPadding).background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = Color(0xFF4CAF50))
                 }
             }
@@ -179,18 +179,18 @@ fun CategoryPickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1E1F24),
-        titleContentColor = Color.White,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onBackground,
         title = { Text("Change category") },
         text = {
             if (categories.isEmpty()) {
-                Text("No categories yet.", color = Color.Gray)
+                Text("No categories yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Column {
                     categories.forEach { category ->
                         Text(
                             text = category.name,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onBackground,
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -202,7 +202,7 @@ fun CategoryPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     )
 }
@@ -252,7 +252,7 @@ fun TransactionDetailScreen(
         Text(
             text = Money.formatRupeesWhole(transaction.amountMinor),
             style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-            color = Color.White
+            color = MaterialTheme.colorScheme.onBackground
         )
         
         // Expense/Income Pill
@@ -276,15 +276,15 @@ fun TransactionDetailScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Category", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+            Text("Category", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(category?.name ?: "Uncategorized", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                Text(category?.name ?: "Uncategorized", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                 Spacer(modifier = Modifier.width(6.dp))
                 val dotColor = if (category != null) Color(0xFF4CAF50) else Color(0xFF6B7280)
                 Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(dotColor))
             }
         }
-        Divider(color = Color(0xFF2A2D35))
+        Divider(color = MaterialTheme.colorScheme.outline)
         
         DetailRow("Payment Method", "UPI")
         DetailRow("Note", "-")
@@ -303,13 +303,13 @@ fun DetailRow(label: String, value: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.Gray
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
-            color = Color.White
+            color = MaterialTheme.colorScheme.onBackground
         )
     }
-    Divider(color = Color(0xFF2A2D35))
+    Divider(color = MaterialTheme.colorScheme.outline)
 }

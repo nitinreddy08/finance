@@ -90,7 +90,6 @@ fun BudgetPaceNavGraph(
             CategoriesRoute(
                 viewModel = viewModel,
                 onBack = { navController.navigateUp() },
-                onCategoryClick = { /* Handle category click */ }
             )
         }
         

@@ -24,6 +24,7 @@ import com.budgetpace.app.core.designsystem.theme.bpColors
 import com.budgetpace.app.core.model.BudgetStatus
 import com.budgetpace.app.core.model.CategorySummary
 import com.budgetpace.app.core.model.MonthSummary
+import com.budgetpace.app.core.model.PeriodStatus
 import com.budgetpace.app.core.model.PeriodSummary
 import com.budgetpace.app.core.money.Money
 import java.time.Month
@@ -38,7 +39,7 @@ fun DashboardRoute(
     
     when (val state = uiState) {
         is DashboardUiState.Loading -> {
-            Box(modifier = Modifier.fillMaxSize().background(Color(0xFF15161A)), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color(0xFF4CAF50))
             }
         }
@@ -46,8 +47,8 @@ fun DashboardRoute(
             DashboardScreen(summary = state.summary)
         }
         is DashboardUiState.Error -> {
-            Box(modifier = Modifier.fillMaxSize().background(Color(0xFF15161A)), contentAlignment = Alignment.Center) {
-                Text("Error loading dashboard", color = Color.White)
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+                Text("Error loading dashboard", color = MaterialTheme.colorScheme.onBackground)
             }
         }
     }
@@ -58,7 +59,7 @@ fun DashboardScreen(summary: MonthSummary) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF15161A)) // Dark background from mockup
+            .background(MaterialTheme.colorScheme.background) // Dark background from mockup
             .padding(horizontal = 16.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
@@ -75,19 +76,19 @@ fun DashboardScreen(summary: MonthSummary) {
                     Text(
                         text = "$monthName ${summary.month.year}",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "Change Month",
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.padding(start = 4.dp)
                     )
                 }
                 Icon(
                     imageVector = Icons.Default.Notifications,
                     contentDescription = "Notifications",
-                    tint = Color.White
+                    tint = MaterialTheme.colorScheme.onBackground
                 )
             }
         }
@@ -95,7 +96,7 @@ fun DashboardScreen(summary: MonthSummary) {
         // TOTAL REMAINING Card
         item {
             Surface(
-                color = Color(0xFF1E1F24),
+                color = MaterialTheme.colorScheme.surface,
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -108,19 +109,19 @@ fun DashboardScreen(summary: MonthSummary) {
                         Text(
                             text = "TOTAL REMAINING",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.Gray,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             letterSpacing = 1.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = Money.formatRupeesWhole(summary.remainingMinor),
                             style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
                             text = "of ${Money.formatRupeesWhole(summary.totalBudgetMinor)}",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     
@@ -128,7 +129,7 @@ fun DashboardScreen(summary: MonthSummary) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(72.dp)) {
                         CircularProgressIndicator(
                             progress = 1f,
-                            color = Color(0xFF2A2D35),
+                            color = MaterialTheme.colorScheme.outline,
                             strokeWidth = 6.dp,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -142,8 +143,8 @@ fun DashboardScreen(summary: MonthSummary) {
                         )
                         val pct = (ratio * 100).toInt().coerceIn(0, 100)
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("${pct}%", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("left", color = Color.Gray, fontSize = 10.sp)
+                            Text("${pct}%", color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("left", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
                         }
                     }
                 }
@@ -153,7 +154,7 @@ fun DashboardScreen(summary: MonthSummary) {
         // SAFE TO SPEND TODAY Card
         item {
             Surface(
-                color = Color(0xFF1E1F24),
+                color = MaterialTheme.colorScheme.surface,
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -166,19 +167,19 @@ fun DashboardScreen(summary: MonthSummary) {
                         Text(
                             text = "SAFE TO SPEND TODAY",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.Gray,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             letterSpacing = 1.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = Money.formatRupeesWhole(summary.safeToSpendMinor),
                             style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
                             text = "Based on time passed & budget pace",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -191,7 +192,7 @@ fun DashboardScreen(summary: MonthSummary) {
                 Text(
                     text = "BUDGET PACE (4 PERIODS)",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 1.sp
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -216,7 +217,7 @@ fun DashboardScreen(summary: MonthSummary) {
                 Text(
                     text = "TOP CATEGORIES",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 1.sp
                 )
                 Text(
@@ -240,12 +241,12 @@ private fun PeriodTile(period: PeriodSummary, modifier: Modifier = Modifier) {
         BudgetStatus.GREEN -> Color(0xFF4CAF50)
         BudgetStatus.ORANGE -> Color(0xFFFF9800)
         BudgetStatus.RED -> Color(0xFFF44336)
-        BudgetStatus.GREY -> Color.Gray
+        BudgetStatus.GREY -> MaterialTheme.colorScheme.onSurfaceVariant
         BudgetStatus.CURRENT -> Color(0xFF64B5F6)
     }
-    
+
     Surface(
-        color = Color(0xFF1E1F24),
+        color = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.small,
         modifier = modifier
     ) {
@@ -253,30 +254,35 @@ private fun PeriodTile(period: PeriodSummary, modifier: Modifier = Modifier) {
             modifier = Modifier.padding(12.dp)
         ) {
             Text(
-                text = "P${period.periodIndex + 1}",
+                text = "WEEK ${period.periodIndex + 1}",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "Week ${period.periodIndex + 1}",
+                text = when (period.periodStatus) {
+                    PeriodStatus.UPCOMING -> "UPCOMING"
+                    PeriodStatus.CURRENT -> "CURRENT"
+                    PeriodStatus.COMPLETED -> "COMPLETED"
+                },
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = if (period.spentMinor > 0) Money.formatRupeesWhole(period.spentMinor) else "₹0",
+                text = if (period.periodStatus == PeriodStatus.UPCOMING) "—"
+                       else Money.formatRupeesWhole(period.spentMinor),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = color
             )
             Text(
                 text = "of ${Money.formatRupeesWhole(period.effectiveBudgetMinor)}",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(8.dp))
-            val pct = if (period.effectiveBudgetMinor > 0) (period.spentMinor.toFloat() / period.effectiveBudgetMinor * 100).toInt() else 0
+            // Spec §39: status must never rely on color alone — always pair it with a word.
             Text(
-                text = if (period.spentMinor > 0) "${pct}%" else "0%",
+                text = periodStatusLabel(period),
                 style = MaterialTheme.typography.labelSmall,
                 color = color
             )
@@ -284,18 +290,31 @@ private fun PeriodTile(period: PeriodSummary, modifier: Modifier = Modifier) {
     }
 }
 
+private fun periodStatusLabel(period: PeriodSummary): String = when (period.paceStatus) {
+    BudgetStatus.GREEN -> "ON TRACK"
+    BudgetStatus.ORANGE -> "OVER"
+    BudgetStatus.RED -> "OVER BUDGET"
+    BudgetStatus.GREY -> "UPCOMING"
+    BudgetStatus.CURRENT -> "ON TRACK"
+}
+
 @Composable
 fun CategoryMockupItem(summary: CategorySummary) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        // Icon
+    Row(verticalAlignment = Alignment.Top) {
+        // Spec §33: no literal emoji/color-square icons in production — a neutral letter
+        // avatar until categories have real per-category icons.
         Box(
             modifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF2E7D32).copy(alpha = 0.2f)),
+                .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            Text("🛒", fontSize = 18.sp)
+            Text(
+                summary.category.name.firstOrNull()?.uppercase() ?: "?",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -306,22 +325,99 @@ fun CategoryMockupItem(summary: CategorySummary) {
                 Text(
                     text = summary.category.name,
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
                     text = "${Money.formatRupeesWhole(summary.totalSpentMinor)} / ${Money.formatRupeesWhole(summary.category.monthlyBudgetMinor)}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            val ratio = if (summary.category.monthlyBudgetMinor > 0) summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor else 0f
-            LinearProgressIndicator(
-                progress = ratio.coerceIn(0f, 1f),
-                color = Color(0xFF4CAF50),
-                trackColor = Color(0xFF2A2D35),
-                strokeCap = StrokeCap.Round,
-                modifier = Modifier.fillMaxWidth().height(4.dp)
+
+            // Spec §24/§33: a category with weeklyPacingEnabled = false (e.g. Rent)
+            // participates in the overall pace but shows "Monthly" here instead of its own
+            // four-period breakdown.
+            if (summary.category.weeklyPacingEnabled) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    summary.periods.forEach { period ->
+                        CategoryPeriodMiniTile(period = period, modifier = Modifier.weight(1f))
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "${Money.formatRupeesWhole(summary.remainingMinor)} remaining",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text(
+                    text = "Monthly",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 1.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                val ratio = if (summary.category.monthlyBudgetMinor > 0) summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor else 0f
+                LinearProgressIndicator(
+                    progress = ratio.coerceIn(0f, 1f),
+                    color = Color(0xFF4CAF50),
+                    trackColor = MaterialTheme.colorScheme.outline,
+                    strokeCap = StrokeCap.Round,
+                    modifier = Modifier.fillMaxWidth().height(4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryPeriodMiniTile(period: PeriodSummary, modifier: Modifier = Modifier) {
+    val color = when (period.paceStatus) {
+        BudgetStatus.GREEN -> Color(0xFF4CAF50)
+        BudgetStatus.ORANGE -> Color(0xFFFF9800)
+        BudgetStatus.RED -> Color(0xFFF44336)
+        BudgetStatus.GREY -> MaterialTheme.colorScheme.onSurfaceVariant
+        BudgetStatus.CURRENT -> Color(0xFF64B5F6)
+    }
+    val statusText = when (period.paceStatus) {
+        BudgetStatus.GREEN -> "ON TRACK"
+        BudgetStatus.ORANGE -> "OVER"
+        BudgetStatus.RED -> "OVER"
+        BudgetStatus.GREY -> "UPCOMING"
+        BudgetStatus.CURRENT -> "NOW"
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "W${period.periodIndex + 1}",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (period.periodStatus == PeriodStatus.UPCOMING) "—"
+                       else Money.formatRupeesWhole(period.spentMinor),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = color
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                // Spec §39: status must never rely on color alone — pair it with text.
+                text = statusText,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                color = color
             )
         }
     }

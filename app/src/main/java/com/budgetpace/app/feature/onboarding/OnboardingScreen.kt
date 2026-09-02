@@ -45,7 +45,7 @@ fun OnboardingRoute(
 
     val context = LocalContext.current
 
-    Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF15161A)) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when (step) {
 
             // ── STEP 0: Welcome ──────────────────────────────────────────────
@@ -64,20 +64,22 @@ fun OnboardingRoute(
                     Text(
                         text = "Spend at the speed\nyou planned.",
                         style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold, lineHeight = 44.sp),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(20.dp))
                     Text(
                         text = "Automatically capture Kotak & SBI transactions, categorize in one tap, and see whether you are spending too fast.",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(72.dp))
                     Button(
                         onClick = { viewModel.signInWithGoogle(context) },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
+                        // Google's Sign-in button branding is a fixed white pill with black
+                        // text/logo regardless of the host app's theme — not theme-adaptive.
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -108,19 +110,19 @@ fun OnboardingRoute(
                         Text(
                             "Set your categories",
                             style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             "Add each spending category and its monthly budget. Your total spend limit is the sum.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.Gray
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(12.dp))
 
                         // Running total
                         Surface(
-                            color = if (totalMinor > 0) Color(0xFF1B3A1B) else Color(0xFF1E1F24),
+                            color = if (totalMinor > 0) Color(0xFF1B3A1B) else MaterialTheme.colorScheme.surface,
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Row(
@@ -128,10 +130,10 @@ fun OnboardingRoute(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Total monthly budget", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
+                                Text("Total monthly budget", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     "\u20B9${"%,d".format(totalMinor / 100)}",
-                                    color = if (totalMinor > 0) Color(0xFF4CAF50) else Color.Gray,
+                                    color = if (totalMinor > 0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                                 )
                             }
@@ -149,13 +151,13 @@ fun OnboardingRoute(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF1E1F24))
+                                    .background(MaterialTheme.colorScheme.surface)
                                     .padding(horizontal = 16.dp, vertical = 14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
-                                    Text(entry.name, color = Color.White, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+                                    Text(entry.name, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
                                     Text(
                                         "\u20B9${"%,d".format(entry.budgetMinor / 100)} / month",
                                         color = Color(0xFF4CAF50),
@@ -177,7 +179,7 @@ fun OnboardingRoute(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(Color(0xFF1E1F24))
+                                        .background(MaterialTheme.colorScheme.surface)
                                         .padding(12.dp)
                                 ) {
                                     TextField(
@@ -185,13 +187,13 @@ fun OnboardingRoute(
                                         onValueChange = { newName = it },
                                         modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                                         placeholder = { Text("Category name  e.g. Groceries", color = Color(0xFF6B7280)) },
-                                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
                                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
                                         colors = TextFieldDefaults.colors(
                                             focusedContainerColor = Color.Transparent,
                                             unfocusedContainerColor = Color.Transparent,
                                             focusedIndicatorColor = Color(0xFF4CAF50),
-                                            unfocusedIndicatorColor = Color(0xFF2A2D35),
+                                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
                                             cursorColor = Color(0xFF4CAF50)
                                         )
                                     )
@@ -201,7 +203,7 @@ fun OnboardingRoute(
                                         onValueChange = { newBudget = it.filter { c -> c.isDigit() } },
                                         modifier = Modifier.fillMaxWidth(),
                                         placeholder = { Text("Monthly budget (e.g. 3000)", color = Color(0xFF6B7280)) },
-                                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
                                         prefix = { Text("\u20B9 ", color = Color(0xFF4CAF50), style = MaterialTheme.typography.bodyLarge) },
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                                         keyboardActions = KeyboardActions(onDone = {
@@ -218,7 +220,7 @@ fun OnboardingRoute(
                                             focusedContainerColor = Color.Transparent,
                                             unfocusedContainerColor = Color.Transparent,
                                             focusedIndicatorColor = Color(0xFF4CAF50),
-                                            unfocusedIndicatorColor = Color(0xFF2A2D35),
+                                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
                                             cursorColor = Color(0xFF4CAF50)
                                         )
                                     )
@@ -227,9 +229,9 @@ fun OnboardingRoute(
                                         OutlinedButton(
                                             onClick = { showAddRow = false; newName = ""; newBudget = "" },
                                             modifier = Modifier.weight(1f),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2A2D35)),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                                             shape = RoundedCornerShape(8.dp)
-                                        ) { Text("Cancel", color = Color.Gray) }
+                                        ) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                                         Button(
                                             onClick = {
                                                 val n = newName.trim()
@@ -245,7 +247,7 @@ fun OnboardingRoute(
                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
                                             shape = RoundedCornerShape(8.dp),
                                             enabled = newName.isNotBlank() && (newBudget.toLongOrNull() ?: 0L) > 0
-                                        ) { Text("Add", color = Color.White) }
+                                        ) { Text("Add", color = MaterialTheme.colorScheme.onBackground) }
                                     }
                                 }
                                 LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -261,7 +263,7 @@ fun OnboardingRoute(
                             OutlinedButton(
                                 onClick = { showAddRow = true },
                                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2A2D35)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(18.dp))
@@ -296,9 +298,9 @@ fun OnboardingRoute(
                 if (showDialog) {
                     AlertDialog(
                         onDismissRequest = { showDialog = false },
-                        containerColor = Color(0xFF1E1F24),
-                        titleContentColor = Color.White,
-                        textContentColor = Color.Gray,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         title = { Text("One extra step for Android 13+", fontWeight = FontWeight.Bold) },
                         text = {
                             Text(
@@ -316,7 +318,7 @@ fun OnboardingRoute(
                             }) { Text("Open Settings", color = Color(0xFF4CAF50)) }
                         },
                         dismissButton = {
-                            TextButton(onClick = { showDialog = false }) { Text("Cancel", color = Color.Gray) }
+                            TextButton(onClick = { showDialog = false }) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
                     )
                 }
@@ -327,17 +329,17 @@ fun OnboardingRoute(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
-                        modifier = Modifier.size(80.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF1E1F24)),
+                        modifier = Modifier.size(80.dp).clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface),
                         contentAlignment = Alignment.Center
                     ) { Text("\uD83D\uDCF1", fontSize = 36.sp) }
 
                     Spacer(modifier = Modifier.height(28.dp))
-                    Text("Enable notification access", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), color = Color.White, textAlign = TextAlign.Center)
+                    Text("Enable notification access", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onBackground, textAlign = TextAlign.Center)
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         "Budget Pace uses Android notification access to detect Kotak and SBI bank transaction notifications shown by Google Messages. We never read personal messages.",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
 
@@ -374,7 +376,7 @@ fun OnboardingRoute(
                     ) { Text("Notification access enabled \u2713", color = Color(0xFF4CAF50), style = MaterialTheme.typography.titleSmall) }
 
                     Spacer(modifier = Modifier.height(24.dp))
-                    HorizontalDivider(color = Color(0xFF2A2D35))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Finish

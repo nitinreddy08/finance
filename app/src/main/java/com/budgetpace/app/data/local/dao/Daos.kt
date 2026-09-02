@@ -92,6 +92,20 @@ interface TransactionDao {
     """)
     fun observeByMonthAndCategory(monthId: String, categoryId: String): Flow<List<TransactionEntity>>
 
+    @Query("""
+        SELECT * FROM transactions
+        WHERE categoryId = :categoryId AND recordDecision = 'RECORDED'
+        ORDER BY transactionDate DESC
+    """)
+    suspend fun getByCategory(categoryId: String): List<TransactionEntity>
+
+    @Query("""
+        UPDATE transactions
+        SET categoryId = :toCategoryId, syncState = 'PENDING', updatedAt = :now
+        WHERE categoryId = :fromCategoryId
+    """)
+    suspend fun moveAllFromCategory(fromCategoryId: String, toCategoryId: String, now: Long)
+
     @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): TransactionEntity?
 

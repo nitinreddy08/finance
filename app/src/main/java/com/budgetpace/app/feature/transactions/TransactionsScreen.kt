@@ -79,7 +79,7 @@ fun TransactionsRoute(
     
     when (val state = uiState) {
         is TransactionsUiState.Loading -> {
-            Box(modifier = Modifier.fillMaxSize().background(Color(0xFF15161A)), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color(0xFF4CAF50))
             }
         }
@@ -91,8 +91,8 @@ fun TransactionsRoute(
             )
         }
         is TransactionsUiState.Error -> {
-            Box(modifier = Modifier.fillMaxSize().background(Color(0xFF15161A)), contentAlignment = Alignment.Center) {
-                Text("Error loading transactions", color = Color.White)
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+                Text("Error loading transactions", color = MaterialTheme.colorScheme.onBackground)
             }
         }
     }
@@ -123,24 +123,24 @@ fun TransactionsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
                     IconButton(onClick = { }) {
-                        Icon(Icons.Default.FilterList, contentDescription = "Filter", tint = Color.White)
+                        Icon(Icons.Default.FilterList, contentDescription = "Filter", tint = MaterialTheme.colorScheme.onBackground)
                     }
                     IconButton(onClick = { }) {
-                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White)
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF15161A),
-                    titleContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
                 )
             )
         },
-        containerColor = Color(0xFF15161A)
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
             
@@ -149,7 +149,7 @@ fun TransactionsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .background(Color(0xFF1E1F24), RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -160,14 +160,14 @@ fun TransactionsScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(20.dp))
-                            .background(if (isSelected) Color.White else Color.Transparent)
+                            .background(if (isSelected) MaterialTheme.colorScheme.onBackground else Color.Transparent)
                             .clickable { selectedTab = tab }
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = tab,
-                            color = if (isSelected) Color.Black else Color.Gray,
+                            color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
                         )
                     }
@@ -232,7 +232,7 @@ private fun DateHeader(date: LocalDate, dailyTxns: List<com.budgetpace.app.core.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF15161A))
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -240,13 +240,13 @@ private fun DateHeader(date: LocalDate, dailyTxns: List<com.budgetpace.app.core.
         Text(
             text = displayDate,
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = Color.Gray
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (displayTotal.isNotEmpty()) {
             Text(
                 text = displayTotal,
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -263,16 +263,16 @@ private fun TransactionMockupRow(
     val isCredit = transaction.direction == TransactionDirection.CREDIT
     val amountText = Money.formatRupeesWhole(transaction.amountMinor)
     val displayAmount = if (isCredit) "+$amountText" else amountText
-    val amountColor = if (isCredit) Color(0xFF4CAF50) else Color.White
+    val amountColor = if (isCredit) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onBackground
     
     // Fallback UI logic based on direction for mockup purposes
     val iconColor = if (isCredit) Color(0xFF2E7D32).copy(alpha = 0.2f) else Color(0xFFD32F2F).copy(alpha = 0.2f)
     val iconTint = if (isCredit) Color(0xFF4CAF50) else Color(0xFFF44336)
     val iconVector = if (isCredit) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
     
-    val payee = transaction.recipient ?: transaction.sender ?: category?.name ?: "Miscellaneous"
+    val payee = transaction.recipient ?: transaction.sender ?: category?.name ?: "Uncategorized"
     val time = transaction.transactionDateTime?.atZone(ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("hh:mm a")) ?: ""
-    val categoryName = category?.name ?: "Miscellaneous"
+    val categoryName = category?.name ?: "Uncategorized"
     
     Row(
         modifier = Modifier
@@ -291,7 +291,12 @@ private fun TransactionMockupRow(
                     .background(iconColor),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(iconVector, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+                Icon(
+                    iconVector,
+                    contentDescription = if (isCredit) "Income" else "Expense",
+                    tint = iconTint,
+                    modifier = Modifier.size(20.dp)
+                )
             }
             
             Spacer(modifier = Modifier.width(12.dp))
@@ -300,13 +305,13 @@ private fun TransactionMockupRow(
                 Text(
                     text = payee,
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 if (!transaction.referenceNumber.isNullOrEmpty()) {
                     Text(
                         text = "UPI Ref: ${transaction.referenceNumber}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -321,16 +326,14 @@ private fun TransactionMockupRow(
             Text(
                 text = time,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFFF9800))) // Mocking category dot
-                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = categoryName,
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
