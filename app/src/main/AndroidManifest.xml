@@ -4,6 +4,12 @@
     <!-- Required on API 33+ to post the categorization notification (spec §21). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Without this, no network call can succeed at all: Google sign-in token verification,
+         Drive/Sheets authorization and API calls, and WorkManager's network-constrained sync
+         worker would all silently fail. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:name=".BudgetPaceApp"
         android:allowBackup="false"
