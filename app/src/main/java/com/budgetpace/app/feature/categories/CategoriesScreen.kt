@@ -40,7 +40,7 @@ class CategoriesViewModel @Inject constructor(
     
     // Passing empty string for phase testing
     val uiState: StateFlow<CategoriesUiState> = budgetRepository.observeMonthSummary(UUID.randomUUID().toString())
-        .map { summary -> CategoriesUiState.Success(summary.categories) }
+        .map { summary -> CategoriesUiState.Success(summary?.categories ?: emptyList()) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),

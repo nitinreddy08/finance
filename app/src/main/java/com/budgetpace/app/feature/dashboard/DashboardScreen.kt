@@ -118,7 +118,7 @@ fun DashboardScreen(summary: MonthSummary) {
                             color = Color.White
                         )
                         Text(
-                            text = "of ${Money.formatRupeesWhole(summary.budgetMinor)}",
+                            text = "of ${Money.formatRupeesWhole(summary.totalBudgetMinor)}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.Gray
                         )
@@ -132,7 +132,7 @@ fun DashboardScreen(summary: MonthSummary) {
                             strokeWidth = 6.dp,
                             modifier = Modifier.fillMaxSize()
                         )
-                        val ratio = if (summary.budgetMinor > 0) summary.remainingMinor.toFloat() / summary.budgetMinor else 0f
+                        val ratio = if (summary.totalBudgetMinor > 0) summary.remainingMinor.toFloat() / summary.totalBudgetMinor else 0f
                         CircularProgressIndicator(
                             progress = ratio.coerceIn(0f, 1f),
                             color = Color(0xFF4CAF50),
@@ -274,12 +274,12 @@ private fun PeriodTile(period: PeriodSummary, modifier: Modifier = Modifier) {
                 color = color
             )
             Text(
-                text = "of ${Money.formatRupeesWhole(period.budgetMinor)}",
+                text = "of ${Money.formatRupeesWhole(period.totalBudgetMinor)}",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
                 color = Color.Gray
             )
             Spacer(modifier = Modifier.height(8.dp))
-            val pct = if (period.budgetMinor > 0) (period.spentMinor.toFloat() / period.budgetMinor * 100).toInt() else 0
+            val pct = if (period.totalBudgetMinor > 0) (period.spentMinor.toFloat() / period.totalBudgetMinor * 100).toInt() else 0
             Text(
                 text = if (period.spentMinor > 0) "${pct}%" else "0%",
                 style = MaterialTheme.typography.labelSmall,
@@ -314,13 +314,13 @@ fun CategoryMockupItem(summary: CategorySummary) {
                     color = Color.White
                 )
                 Text(
-                    text = "${Money.formatRupeesWhole(summary.totalSpentMinor)} / ${Money.formatRupeesWhole(summary.category.monthlyBudgetMinor)}",
+                    text = "${Money.formatRupeesWhole(summary.totalSpentMinor)} / ${Money.formatRupeesWhole(summary.category.monthlytotalBudgetMinor)}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.Gray
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            val ratio = if (summary.category.monthlyBudgetMinor > 0) summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor else 0f
+            val ratio = if (summary.category.monthlytotalBudgetMinor > 0) summary.totalSpentMinor.toFloat() / summary.category.monthlytotalBudgetMinor else 0f
             LinearProgressIndicator(
                 progress = ratio.coerceIn(0f, 1f),
                 color = Color(0xFF4CAF50),

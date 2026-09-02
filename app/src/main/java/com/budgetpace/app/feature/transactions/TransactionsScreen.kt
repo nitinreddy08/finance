@@ -197,8 +197,8 @@ fun TransactionsList(
             }
             items(dailyTxns) { txn ->
                 TransactionMockupRow(
-                    transaction = txn,
-                    onClick = { onTransactionClick(txn.id.toString()) }
+                    item = txn,
+                    onClick = { onTransactionClick(txn.transaction.id.toString()) }
                 )
             }
         }
