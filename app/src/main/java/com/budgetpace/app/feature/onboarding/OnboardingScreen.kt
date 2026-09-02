@@ -1,5 +1,6 @@
 package com.budgetpace.app.feature.onboarding
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -87,6 +88,13 @@ fun OnboardingRoute(
                 val signInState by viewModel.signInState.collectAsState()
                 LaunchedEffect(signInState) {
                     if (signInState == true) step = 2
+                }
+                LaunchedEffect(Unit) {
+                    viewModel.signInError.collect {
+                        // Spec §61: never expose the raw exception to the user — the real cause
+                        // is logged via Log.e in AuthRepositoryImpl for diagnosis from logcat.
+                        Toast.makeText(context, "Couldn't sign in with Google. You can try again or skip for now.", Toast.LENGTH_LONG).show()
+                    }
                 }
                 Column(
                     modifier = Modifier

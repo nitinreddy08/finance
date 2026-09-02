@@ -3,6 +3,7 @@ package com.budgetpace.app.data.google.auth
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
@@ -76,6 +77,11 @@ class GoogleAuthorizationManager @Inject constructor(
                 AuthorizationOutcome.Authorized
             }
         } catch (e: Exception) {
+            // Never shown raw to the user (spec §61) — but this is the only way to diagnose a
+            // Google Cloud Console misconfiguration (wrong client type, SHA-1 not registered,
+            // Sheets/Drive API not enabled, consent screen in Testing without this account added)
+            // from a real device's logcat.
+            Log.e("GoogleAuth", "requestAuthorization failed: ${e.javaClass.simpleName}: ${e.message}", e)
             AuthorizationOutcome.Failed(e.message ?: "Authorization failed")
         }
     }
@@ -88,6 +94,7 @@ class GoogleAuthorizationManager @Inject constructor(
             _isAuthorized.value = true
             AuthorizationOutcome.Authorized
         } catch (e: Exception) {
+            Log.e("GoogleAuth", "handleAuthorizationResult failed: ${e.javaClass.simpleName}: ${e.message}", e)
             AuthorizationOutcome.Failed(e.message ?: "Authorization failed")
         }
     }

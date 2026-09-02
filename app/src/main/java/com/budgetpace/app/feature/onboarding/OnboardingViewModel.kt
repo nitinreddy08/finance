@@ -11,7 +11,9 @@ import com.budgetpace.app.data.local.dao.CategoryDao
 import com.budgetpace.app.data.local.mapper.toEntity
 import com.budgetpace.app.domain.auth.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -29,17 +31,20 @@ class OnboardingViewModel @Inject constructor(
     private val _signInState = MutableStateFlow<Boolean?>(null)
     val signInState = _signInState.asStateFlow()
 
+    // A signal, not a state — MutableStateFlow drops a repeated identical value (e.g. two
+    // failed attempts in a row would both be `false` and only the first would emit), which is
+    // exactly why the sign-in button used to look like it was doing nothing on every retry.
+    private val _signInError = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val signInError = _signInError.asSharedFlow()
+
     private val _isSaving = MutableStateFlow(false)
     val isSaving = _isSaving.asStateFlow()
 
     fun signInWithGoogle(context: Context) {
         viewModelScope.launch {
-            try {
-                val result = authRepository.signInWithGoogle(context)
-                _signInState.value = result.isSuccess
-            } catch (e: Exception) {
-                _signInState.value = false
-            }
+            val result = authRepository.signInWithGoogle(context)
+            _signInState.value = result.isSuccess
+            if (result.isFailure) _signInError.tryEmit(Unit)
         }
     }
 

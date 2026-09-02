@@ -1,6 +1,7 @@
 package com.budgetpace.app.data.auth
 
 import android.content.Context
+import android.util.Log
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.CustomCredential
@@ -57,6 +58,9 @@ class AuthRepositoryImpl @Inject constructor(
                 Result.failure(Exception("Unexpected credential type"))
             }
         } catch (e: Exception) {
+            // Never shown raw to the user (spec §61) — but this is the only way to diagnose
+            // Credential Manager / OAuth client misconfiguration from a real device's logcat.
+            Log.e("AuthRepository", "Google sign-in failed: ${e.javaClass.simpleName}: ${e.message}", e)
             Result.failure(e)
         }
     }
