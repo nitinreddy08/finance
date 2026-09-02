@@ -4,11 +4,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.budgetpace.app.core.designsystem.theme.BudgetPaceTheme
@@ -22,12 +26,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            BudgetPaceTheme {
+            // Force dark theme as per the high-fidelity mockups
+            BudgetPaceTheme(darkTheme = true) {
                 val navController = rememberNavController()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
-                // Show bottom bar only on top-level screens
+                // Only show the bottom bar on the 4 main root screens
                 val showBottomBar = currentRoute in listOf(
                     Screen.Dashboard.route,
                     Screen.Transactions.route,
@@ -37,10 +42,26 @@ class MainActivity : ComponentActivity() {
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
+                    containerColor = MaterialTheme.colorScheme.background,
+                    floatingActionButtonPosition = FabPosition.Center,
+                    floatingActionButton = {
+                        if (showBottomBar) {
+                            FloatingActionButton(
+                                onClick = { navController.navigate(Screen.AddTransaction.route) },
+                                shape = CircleShape,
+                                containerColor = Color(0xFF2A2D35), // Dark grey from mockup
+                                contentColor = Color.White,
+                                elevation = FloatingActionButtonDefaults.elevation(0.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Transaction")
+                            }
+                        }
+                    },
                     bottomBar = {
                         if (showBottomBar) {
                             NavigationBar(
                                 containerColor = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 0.dp, // Flat look as per mockup
                             ) {
                                 NavigationBarItem(
                                     selected = currentRoute == Screen.Dashboard.route,
@@ -50,44 +71,69 @@ class MainActivity : ComponentActivity() {
                                             launchSingleTop = true 
                                         } 
                                     },
-                                    icon = { Text("📊") },
-                                    label = { Text("Home") }
+                                    icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                    label = { Text("Home") },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = Color(0xFF4CAF50), // Green accent from mockup
+                                        selectedTextColor = Color(0xFF4CAF50),
+                                        unselectedIconColor = Color.Gray,
+                                        unselectedTextColor = Color.Gray,
+                                        indicatorColor = Color.Transparent
+                                    )
                                 )
                                 NavigationBarItem(
                                     selected = currentRoute == Screen.Transactions.route,
-                                    onClick = { 
-                                        navController.navigate(Screen.Transactions.route) { 
-                                            launchSingleTop = true 
-                                        } 
-                                    },
-                                    icon = { Text("💸") },
-                                    label = { Text("Txns") }
+                                    onClick = { navController.navigate(Screen.Transactions.route) { launchSingleTop = true } },
+                                    icon = { Icon(Icons.Default.List, contentDescription = "Transactions") },
+                                    label = { Text("Transactions") },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = Color.White,
+                                        selectedTextColor = Color.White,
+                                        unselectedIconColor = Color.Gray,
+                                        unselectedTextColor = Color.Gray,
+                                        indicatorColor = Color.Transparent
+                                    )
                                 )
+                                
+                                // Empty item to leave space for the FAB in the center
+                                NavigationBarItem(
+                                    selected = false,
+                                    onClick = { },
+                                    icon = { },
+                                    enabled = false
+                                )
+
                                 NavigationBarItem(
                                     selected = currentRoute == Screen.Categories.route,
-                                    onClick = { 
-                                        navController.navigate(Screen.Categories.route) { 
-                                            launchSingleTop = true 
-                                        } 
-                                    },
-                                    icon = { Text("📂") },
-                                    label = { Text("Categories") }
+                                    onClick = { navController.navigate(Screen.Categories.route) { launchSingleTop = true } },
+                                    icon = { Icon(Icons.Default.GridView, contentDescription = "Categories") },
+                                    label = { Text("Categories") },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = Color.White,
+                                        selectedTextColor = Color.White,
+                                        unselectedIconColor = Color.Gray,
+                                        unselectedTextColor = Color.Gray,
+                                        indicatorColor = Color.Transparent
+                                    )
                                 )
                                 NavigationBarItem(
                                     selected = currentRoute == Screen.Settings.route,
-                                    onClick = { 
-                                        navController.navigate(Screen.Settings.route) { 
-                                            launchSingleTop = true 
-                                        } 
-                                    },
-                                    icon = { Text("⚙️") },
-                                    label = { Text("Settings") }
+                                    onClick = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
+                                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                                    label = { Text("Settings") },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = Color.White,
+                                        selectedTextColor = Color.White,
+                                        unselectedIconColor = Color.Gray,
+                                        unselectedTextColor = Color.Gray,
+                                        indicatorColor = Color.Transparent
+                                    )
                                 )
                             }
                         }
                     }
                 ) { innerPadding ->
-                    androidx.compose.foundation.layout.Box(modifier = Modifier.padding(innerPadding)) {
+                    Box(modifier = Modifier.padding(innerPadding)) {
                         BudgetPaceNavGraph(navController = navController)
                     }
                 }
