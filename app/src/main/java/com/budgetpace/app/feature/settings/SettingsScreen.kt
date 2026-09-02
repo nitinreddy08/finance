@@ -1,9 +1,7 @@
 package com.budgetpace.app.feature.settings
 
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
-import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,7 +12,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,21 +20,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import java.text.DateFormat
-import java.util.Date
+import com.budgetpace.app.core.designsystem.theme.ThemeMode
+
+fun isNotificationListenerEnabled(context: android.content.Context): Boolean =
+    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsRoute(
     viewModel: SettingsViewModel = hiltViewModel(),
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onGoogleBackupClick: () -> Unit = {},
+    onExportClick: () -> Unit = {},
 ) {
     Scaffold(
         topBar = {
@@ -56,55 +57,37 @@ fun SettingsRoute(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        SettingsScreen(viewModel = viewModel, modifier = Modifier.padding(innerPadding))
+        SettingsScreen(
+            viewModel = viewModel,
+            modifier = Modifier.padding(innerPadding),
+            onGoogleBackupClick = onGoogleBackupClick,
+            onExportClick = onExportClick,
+        )
     }
 }
 
+/** Spec §13: DATA / BANK NOTIFICATIONS / APPEARANCE / ABOUT — nothing else. */
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    modifier: Modifier = Modifier,
+    onGoogleBackupClick: () -> Unit = {},
+    onExportClick: () -> Unit = {},
+) {
     val context = LocalContext.current
     val session by viewModel.session.collectAsStateWithLifecycle()
-    val exportState by viewModel.exportState.collectAsStateWithLifecycle()
     val isSheetsAuthorized by viewModel.isSheetsAuthorized.collectAsStateWithLifecycle()
-    val sheetsSyncState by viewModel.sheetsSyncState.collectAsStateWithLifecycle()
-    val pendingSyncCount by viewModel.pendingSyncCount.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    var showThemePicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var notificationAccessEnabled by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
 
-    val authorizationLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult()
-    ) { result ->
-        viewModel.handleAuthorizationResult(result.data)
-    }
-
-    LaunchedEffect(exportState) {
-        when (val state = exportState) {
-            is ExportState.Success -> {
-                Toast.makeText(context, "Exported to ${state.uri.lastPathSegment}", Toast.LENGTH_LONG).show()
-                viewModel.consumeExportState()
-            }
-            is ExportState.Error -> {
-                // Spec §61: never expose raw technical errors to the user.
-                Toast.makeText(context, "Couldn't export CSV. Your local data is safe.", Toast.LENGTH_LONG).show()
-                viewModel.consumeExportState()
-            }
-            else -> Unit
-        }
-    }
-
-    LaunchedEffect(sheetsSyncState) {
-        when (val state = sheetsSyncState) {
-            is SheetsSyncState.Success -> {
-                val message = if (state.syncedCount == 0) "Already up to date" else "Synced ${state.syncedCount} transaction(s)"
-                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                viewModel.consumeSheetsSyncState()
-            }
-            is SheetsSyncState.Error -> {
-                // Spec §61: never expose raw technical errors to the user.
-                Toast.makeText(context, "Couldn't sync with Google Sheets. Your local data is safe.", Toast.LENGTH_LONG).show()
-                viewModel.consumeSheetsSyncState()
-            }
-            else -> Unit
-        }
+    if (showThemePicker) {
+        ThemePickerDialog(
+            current = themeMode,
+            onSelect = { viewModel.setThemeMode(it); showThemePicker = false },
+            onDismiss = { showThemePicker = false }
+        )
     }
 
     if (showDeleteConfirm) {
@@ -134,20 +117,16 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 100.dp) // Space for bottom nav
     ) {
-        // User Profile Section — reflects the real signed-in session, never a fabricated identity.
+        // Profile header — reflects the real signed-in session, never a fabricated identity.
         item {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
-                        // A solid avatar chip reads better as surfaceVariant than the thin
-                        // outline tone (outline is meant for borders/dividers, not fills).
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
@@ -160,75 +139,99 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
                     Text(session?.displayName ?: "Not signed in", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
-                    Text(session?.email ?: "Connect a Google account in onboarding", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(session?.email ?: "Connect a Google account below", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
 
         item {
-            SettingsSectionHeader("ACCOUNT")
-            SettingsMockupItem(icon = "G", title = "Google Account", subtitle = if (session != null) "Connected" else "Not connected")
-        }
-
-        item {
-            SettingsSectionHeader("GOOGLE SHEETS")
-            if (!isSheetsAuthorized) {
-                SettingsMockupItem(
-                    icon = "☁",
-                    title = "Connect Google Sheets",
-                    subtitle = "Not connected",
-                    onClick = {
-                        viewModel.beginSheetsAuthorization { pendingIntent ->
-                            authorizationLauncher.launch(
-                                IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                            )
-                        }
-                    }
-                )
-            } else {
-                SettingsMockupItem(icon = "☁", title = "Google Sheets", subtitle = "Connected")
-                SettingsMockupItem(
-                    icon = "🔁",
-                    title = "Daily backup",
-                    subtitle = "On",
-                    onClick = { viewModel.toggleDailyBackup(context, true) }
-                )
-                val lastSync = remember(sheetsSyncState) { viewModel.lastSyncAtMillis() }
-                SettingsMockupItem(
-                    icon = "🕒",
-                    title = "Last backup",
-                    subtitle = lastSync?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) } ?: "Never"
-                )
-                SettingsMockupItem(
-                    icon = "⬆",
-                    title = if (sheetsSyncState == SheetsSyncState.Syncing) "Syncing…" else "Sync now",
-                    subtitle = if (pendingSyncCount > 0) "$pendingSyncCount change${if (pendingSyncCount == 1) "" else "s"} waiting" else "Up to date",
-                    onClick = { if (sheetsSyncState != SheetsSyncState.Syncing) viewModel.syncNow() }
-                )
-            }
-        }
-
-        item {
-            SettingsSectionHeader("PREFERENCES")
-            SettingsMockupItem(icon = "⚙", title = "Currency", subtitle = "INR (₹)")
-        }
-
-        item {
             SettingsSectionHeader("DATA")
             SettingsMockupItem(
+                icon = "☁",
+                title = "Google backup",
+                subtitle = if (isSheetsAuthorized) "Connected" else "Not connected",
+                onClick = onGoogleBackupClick,
+            )
+            SettingsMockupItem(
                 icon = "⬇",
-                title = "Export CSV",
-                subtitle = if (exportState == ExportState.Exporting) "Exporting…" else "Current month",
-                onClick = { viewModel.exportCurrentMonthCsv() }
+                title = "Export",
+                subtitle = "CSV",
+                onClick = onExportClick,
             )
             SettingsMockupItem(
                 icon = "🗑",
                 title = "Delete local data",
                 subtitle = "",
-                onClick = { showDeleteConfirm = true }
+                onClick = { showDeleteConfirm = true },
             )
         }
+
+        item {
+            SettingsSectionHeader("BANK NOTIFICATIONS")
+            SettingsMockupItem(icon = "🏦", title = "Kotak", subtitle = "Enabled")
+            SettingsMockupItem(icon = "🏦", title = "SBI", subtitle = "Enabled")
+            SettingsMockupItem(
+                icon = "🔔",
+                title = "Notification access",
+                subtitle = if (notificationAccessEnabled) "Granted" else "Not granted",
+                onClick = {
+                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    notificationAccessEnabled = isNotificationListenerEnabled(context)
+                },
+            )
+        }
+
+        item {
+            SettingsSectionHeader("APPEARANCE")
+            SettingsMockupItem(
+                icon = "🎨",
+                title = "Theme",
+                subtitle = when (themeMode) {
+                    ThemeMode.SYSTEM -> "System"
+                    ThemeMode.LIGHT -> "Light"
+                    ThemeMode.DARK -> "Dark"
+                },
+                onClick = { showThemePicker = true },
+            )
+        }
+
+        item {
+            SettingsSectionHeader("ABOUT")
+            SettingsMockupItem(icon = "ℹ", title = "Privacy", subtitle = "")
+            SettingsMockupItem(icon = "📦", title = "About Budget Pace", subtitle = "v1.0")
+        }
     }
+}
+
+@Composable
+private fun ThemePickerDialog(
+    current: ThemeMode,
+    onSelect: (ThemeMode) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onBackground,
+        title = { Text("Theme") },
+        text = {
+            Column {
+                listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark").forEach { (mode, label) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(mode) }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = mode == current, onClick = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(label, color = MaterialTheme.colorScheme.onBackground)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    )
 }
 
 @Composable

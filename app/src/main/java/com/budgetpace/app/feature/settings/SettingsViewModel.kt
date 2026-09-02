@@ -10,6 +10,8 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.budgetpace.app.core.designsystem.theme.ThemeMode
+import com.budgetpace.app.core.designsystem.theme.ThemePreference
 import com.budgetpace.app.data.google.auth.AuthorizationOutcome
 import com.budgetpace.app.data.google.auth.GoogleAuthorizationManager
 import com.budgetpace.app.data.google.sheets.GoogleSheetsRepository
@@ -55,6 +57,7 @@ class SettingsViewModel @Inject constructor(
     private val budgetDatabase: BudgetDatabase,
     private val authorizationManager: GoogleAuthorizationManager,
     private val sheetsRepository: GoogleSheetsRepository,
+    private val themePreference: ThemePreference,
 ) : ViewModel() {
 
     val session: StateFlow<UserSession?> = authRepository.currentSession
@@ -69,7 +72,22 @@ class SettingsViewModel @Inject constructor(
     val pendingSyncCount: StateFlow<Int> = transactionDao.observePendingCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    val syncedCount: StateFlow<Int> = transactionDao.observeSyncedCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val themeMode: StateFlow<ThemeMode> = themePreference.mode
+
+    fun setThemeMode(mode: ThemeMode) = themePreference.setMode(mode)
+
     fun lastSyncAtMillis(): Long? = sheetsRepository.lastSyncAtMillis()
+
+    /** Spec §14: "Disconnect Google" signs out and revokes the Sheets/Drive authorization. */
+    fun disconnectGoogle() {
+        viewModelScope.launch {
+            authRepository.signOut()
+            authorizationManager.clear()
+        }
+    }
 
     /**
      * Kicks off Drive/Sheets authorization (spec §7 — a step separate from sign-in).

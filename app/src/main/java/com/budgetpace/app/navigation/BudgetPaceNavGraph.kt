@@ -18,6 +18,8 @@ import com.budgetpace.app.feature.transactions.AddTransactionViewModel
 import com.budgetpace.app.feature.categories.CategoriesRoute
 import com.budgetpace.app.feature.categories.CategoriesViewModel
 import com.budgetpace.app.feature.categories.CategoryDetailRoute
+import com.budgetpace.app.feature.settings.ExportRoute
+import com.budgetpace.app.feature.settings.GoogleBackupRoute
 import com.budgetpace.app.feature.settings.SettingsRoute
 
 sealed class Screen(val route: String) {
@@ -33,6 +35,8 @@ sealed class Screen(val route: String) {
         fun createRoute(id: String) = "categories/$id"
     }
     object Settings : Screen("settings")
+    object GoogleBackup : Screen("settings/google-backup")
+    object Export : Screen("settings/export")
 }
 
 @Composable
@@ -112,8 +116,18 @@ fun BudgetPaceNavGraph(
 
         composable(Screen.Settings.route) {
             SettingsRoute(
-                onBack = { navController.navigateUp() }
+                onBack = { navController.navigateUp() },
+                onGoogleBackupClick = { navController.navigate(Screen.GoogleBackup.route) },
+                onExportClick = { navController.navigate(Screen.Export.route) },
             )
+        }
+
+        composable(Screen.GoogleBackup.route) {
+            GoogleBackupRoute(onBack = { navController.navigateUp() })
+        }
+
+        composable(Screen.Export.route) {
+            ExportRoute(onBack = { navController.navigateUp() })
         }
     }
 }

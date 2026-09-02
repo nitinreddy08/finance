@@ -2,6 +2,8 @@ package com.budgetpace.app
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.budgetpace.app.core.designsystem.theme.ThemeMode
+import com.budgetpace.app.core.designsystem.theme.ThemePreference
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
 import com.budgetpace.app.domain.usecase.EnsureActiveMonthUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,11 +24,14 @@ import javax.inject.Inject
 class AppStartViewModel @Inject constructor(
     budgetMonthDao: BudgetMonthDao,
     private val ensureActiveMonth: EnsureActiveMonthUseCase,
+    themePreference: ThemePreference,
 ) : ViewModel() {
 
     val isOnboarded: StateFlow<Boolean?> = budgetMonthDao.observeAll()
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val themeMode: StateFlow<ThemeMode> = themePreference.mode
 
     init {
         // Spec §57: pick up a calendar month rollover at "the first suitable app ...

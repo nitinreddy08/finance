@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.budgetpace.app.core.designsystem.theme.BudgetPaceTheme
+import com.budgetpace.app.core.designsystem.theme.ThemeMode
 import com.budgetpace.app.navigation.BudgetPaceNavGraph
 import com.budgetpace.app.navigation.Screen
 import dagger.hilt.android.AndroidEntryPoint
@@ -57,10 +59,16 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            // Follow the system light/dark setting (BudgetPaceTheme defaults to
-            // isSystemInDarkTheme()); both palettes are defined per spec §38.
-            BudgetPaceTheme {
-                val appStartViewModel = hiltViewModel<AppStartViewModel>()
+            val appStartViewModel = hiltViewModel<AppStartViewModel>()
+            val themeMode by appStartViewModel.themeMode.collectAsStateWithLifecycle()
+            // Spec §13: Settings → Appearance → Theme (System/Light/Dark); both palettes are
+            // defined per spec §38.
+            val darkTheme = when (themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            BudgetPaceTheme(darkTheme = darkTheme) {
                 val isOnboarded by appStartViewModel.isOnboarded.collectAsStateWithLifecycle()
 
                 // NavHost's startDestination is only read on its first composition, so we must
