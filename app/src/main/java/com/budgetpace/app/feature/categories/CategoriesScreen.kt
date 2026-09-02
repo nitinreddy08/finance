@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -22,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.budgetpace.app.core.designsystem.components.CATEGORY_EMOJI_CHOICES
+import com.budgetpace.app.core.designsystem.components.CategoryIcon
 import com.budgetpace.app.core.model.Category
 import com.budgetpace.app.core.model.CategorySummary
 import com.budgetpace.app.core.model.Transaction
@@ -60,7 +63,7 @@ class CategoriesViewModel @Inject constructor(
         )
 
     /** Spec §23: categories are fully user-defined; this is the only place new ones are created. */
-    fun addCategory(name: String, budgetMinor: Long, weeklyPacingEnabled: Boolean) {
+    fun addCategory(name: String, budgetMinor: Long, weeklyPacingEnabled: Boolean, iconKey: String) {
         if (name.isBlank() || budgetMinor <= 0) return
         viewModelScope.launch {
             val month = budgetMonthDao.getActiveMonth() ?: return@launch
@@ -73,7 +76,7 @@ class CategoriesViewModel @Inject constructor(
                     name = name.trim(),
                     monthlyBudgetMinor = budgetMinor,
                     weeklyPacingEnabled = weeklyPacingEnabled,
-                    iconKey = "default",
+                    iconKey = iconKey,
                     sortOrder = sortOrder,
                     active = true,
                     createdAt = now,
@@ -83,7 +86,7 @@ class CategoriesViewModel @Inject constructor(
         }
     }
 
-    fun updateCategory(categoryId: String, name: String, budgetMinor: Long, weeklyPacingEnabled: Boolean) {
+    fun updateCategory(categoryId: String, name: String, budgetMinor: Long, weeklyPacingEnabled: Boolean, iconKey: String) {
         if (name.isBlank() || budgetMinor <= 0) return
         viewModelScope.launch {
             val existing = categoryDao.getById(categoryId) ?: return@launch
@@ -92,6 +95,7 @@ class CategoriesViewModel @Inject constructor(
                     name = name.trim(),
                     monthlyBudgetMinor = budgetMinor,
                     weeklyPacingEnabled = weeklyPacingEnabled,
+                    iconKey = iconKey,
                     updatedAt = Instant.now().toEpochMilli(),
                 )
             )
@@ -216,9 +220,10 @@ fun CategoriesRoute(
             initialName = "",
             initialBudget = "",
             initialWeeklyPacing = true,
+            initialIconKey = CATEGORY_EMOJI_CHOICES.first(),
             onDismiss = { showAddDialog = false },
-            onConfirm = { name, budgetMinor, weeklyPacing ->
-                viewModel.addCategory(name, budgetMinor, weeklyPacing)
+            onConfirm = { name, budgetMinor, weeklyPacing, iconKey ->
+                viewModel.addCategory(name, budgetMinor, weeklyPacing, iconKey)
                 showAddDialog = false
             }
         )
@@ -230,9 +235,10 @@ fun CategoriesRoute(
             initialName = target.category.name,
             initialBudget = (target.category.monthlyBudgetMinor / 100).toString(),
             initialWeeklyPacing = target.category.weeklyPacingEnabled,
+            initialIconKey = target.category.iconKey.ifBlank { CATEGORY_EMOJI_CHOICES.first() },
             onDismiss = { editCategory = null },
-            onConfirm = { name, budgetMinor, weeklyPacing ->
-                viewModel.updateCategory(target.category.id.toString(), name, budgetMinor, weeklyPacing)
+            onConfirm = { name, budgetMinor, weeklyPacing, iconKey ->
+                viewModel.updateCategory(target.category.id.toString(), name, budgetMinor, weeklyPacing, iconKey)
                 editCategory = null
             }
         )
@@ -280,12 +286,20 @@ private fun CategoryFormDialog(
     initialName: String,
     initialBudget: String,
     initialWeeklyPacing: Boolean,
+    initialIconKey: String,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, budgetMinor: Long, weeklyPacing: Boolean) -> Unit,
+    onConfirm: (name: String, budgetMinor: Long, weeklyPacing: Boolean, iconKey: String) -> Unit,
 ) {
     var name by remember { mutableStateOf(initialName) }
     var budget by remember { mutableStateOf(initialBudget) }
     var weeklyPacing by remember { mutableStateOf(initialWeeklyPacing) }
+    var iconKey by remember { mutableStateOf(initialIconKey) }
+
+    val budgetMinor = Money.rupeesToPaise(budget.ifBlank { "0" })
+    // Spec §4: preview the resulting period split live, computed against the current month's
+    // real day count via the same PeriodCalculator the budget engine uses.
+    val periods = remember { com.budgetpace.app.core.time.PeriodCalculator.periodsFor(java.time.LocalDate.now()) }
+    val split = remember(budgetMinor) { com.budgetpace.app.core.time.PeriodCalculator.splitBudget(budgetMinor, periods) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -293,7 +307,26 @@ private fun CategoryFormDialog(
         titleContentColor = MaterialTheme.colorScheme.onBackground,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Emoji picker — spec §4: the chosen icon appears beside the category everywhere.
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(CATEGORY_EMOJI_CHOICES) { emoji ->
+                        val selected = emoji == iconKey
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(if (selected) Color(0xFF4CAF50).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { iconKey = emoji },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(emoji, fontSize = 20.sp)
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -308,30 +341,30 @@ private fun CategoryFormDialog(
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Weekly pacing", color = MaterialTheme.colorScheme.onBackground)
-                        // Spec §24: e.g. Rent normally has this off — it still counts toward
-                        // the overall monthly pace, it just skips its own 4-tile breakdown.
-                        Text(
-                            "Off for fixed monthly costs like rent",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = weeklyPacing, onCheckedChange = { weeklyPacing = it })
-                }
+
+                Text(
+                    "HOW SHOULD THIS BUDGET BE PACED?",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 1.sp,
+                )
+
+                PacingOption(
+                    selected = !weeklyPacing,
+                    title = "Spend at start of month",
+                    subtitle = "${Money.formatRupeesWhole(budgetMinor)} available in Period 1",
+                    onClick = { weeklyPacing = false },
+                )
+                PacingOption(
+                    selected = weeklyPacing,
+                    title = "Spread across 4 periods",
+                    subtitle = "${split.joinToString(" · ") { Money.formatRupeesWhole(it) }} per period",
+                    onClick = { weeklyPacing = true },
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val budgetMinor = Money.rupeesToPaise(budget.ifBlank { "0" })
-                onConfirm(name, budgetMinor, weeklyPacing)
-            }) {
+            TextButton(onClick = { onConfirm(name, budgetMinor, weeklyPacing, iconKey) }) {
                 Text("Save", color = Color(0xFF4CAF50))
             }
         },
@@ -339,6 +372,31 @@ private fun CategoryFormDialog(
             TextButton(onClick = onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     )
+}
+
+@Composable
+private fun PacingOption(
+    selected: Boolean,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Color(0xFF4CAF50).copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(modifier = Modifier.width(4.dp))
+        Column {
+            Text(title, color = MaterialTheme.colorScheme.onBackground)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 /** Spec §45: delete confirmation -> move-all or per-transaction selection, never a silent delete. */
@@ -506,26 +564,20 @@ fun CategoryMockupRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-            // Spec §33: no literal emoji/color-square icons in production.
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
+            CategoryIcon(iconKey = summary.category.iconKey, name = summary.category.name)
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
                 Text(
-                    summary.category.name.firstOrNull()?.uppercase() ?: "?",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    text = summary.category.name,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = if (summary.category.weeklyPacingEnabled) "4 periods" else "Start of month",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = summary.category.name,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onBackground
-            )
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {

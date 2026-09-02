@@ -122,93 +122,42 @@ private fun AppShell(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
-        floatingActionButtonPosition = FabPosition.Center,
-        floatingActionButton = {
-            if (showBottomBar) {
-                FloatingActionButton(
-                    onClick = { navController.navigate(Screen.AddTransaction.route) },
-                    shape = CircleShape,
-                    // Inverse-surface role: the FAB should read as a solid, high-contrast chip
-                    // against the background in both themes, not a subtle border tint.
-                    containerColor = MaterialTheme.colorScheme.inverseSurface,
-                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                    elevation = FloatingActionButtonDefaults.elevation(0.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Transaction")
-                }
-            }
-        },
+        // Spec §21/§2: bottom nav is icons only, no FAB — "+ Add expense" lives on the
+        // Transactions screen itself instead of a global button.
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 0.dp, // Flat look as per mockup
+                    tonalElevation = 0.dp,
                 ) {
-                    NavigationBarItem(
+                    NavIconItem(
                         selected = currentRoute == Screen.Dashboard.route,
+                        icon = Icons.Default.Home,
+                        contentDescription = "Home",
                         onClick = {
                             navController.navigate(Screen.Dashboard.route) {
                                 popUpTo(Screen.Dashboard.route) { inclusive = true }
                                 launchSingleTop = true
                             }
                         },
-                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                        label = { Text("Home") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF4CAF50), // Green accent from mockup
-                            selectedTextColor = Color(0xFF4CAF50),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = Color.Transparent
-                        )
                     )
-                    NavigationBarItem(
+                    NavIconItem(
                         selected = currentRoute == Screen.Transactions.route,
+                        icon = Icons.Default.SwapHoriz,
+                        contentDescription = "Transactions",
                         onClick = { navController.navigate(Screen.Transactions.route) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.List, contentDescription = "Transactions") },
-                        label = { Text("Transactions") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onBackground,
-                            selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = Color.Transparent
-                        )
                     )
-
-                    // Empty item to leave space for the FAB in the center
-                    NavigationBarItem(
-                        selected = false,
-                        onClick = { },
-                        icon = { },
-                        enabled = false
-                    )
-
-                    NavigationBarItem(
+                    NavIconItem(
                         selected = currentRoute == Screen.Categories.route,
+                        icon = Icons.Default.GridView,
+                        contentDescription = "Categories",
                         onClick = { navController.navigate(Screen.Categories.route) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.GridView, contentDescription = "Categories") },
-                        label = { Text("Categories") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onBackground,
-                            selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = Color.Transparent
-                        )
                     )
-                    NavigationBarItem(
+                    NavIconItem(
                         selected = currentRoute == Screen.Settings.route,
+                        icon = Icons.Default.Settings,
+                        contentDescription = "Settings",
                         onClick = { navController.navigate(Screen.Settings.route) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                        label = { Text("Settings") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onBackground,
-                            selectedTextColor = MaterialTheme.colorScheme.onBackground,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = Color.Transparent
-                        )
                     )
                 }
             }
@@ -218,4 +167,37 @@ private fun AppShell(
             BudgetPaceNavGraph(navController = navController, startDestination = startDestination)
         }
     }
+}
+
+/** Spec §21: icons only, no text labels, a subtle dot marks the selected destination. */
+@Composable
+private fun RowScope.NavIconItem(
+    selected: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    NavigationBarItem(
+        selected = selected,
+        onClick = onClick,
+        icon = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(icon, contentDescription = contentDescription)
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.onBackground else Color.Transparent,
+                            shape = CircleShape
+                        )
+                )
+            }
+        },
+        colors = NavigationBarItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.onBackground,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            indicatorColor = Color.Transparent
+        )
+    )
 }

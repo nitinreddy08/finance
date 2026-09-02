@@ -7,6 +7,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.budgetpace.app.MainActivity
 import com.budgetpace.app.R
+import com.budgetpace.app.core.designsystem.components.isEmojiIcon
 import com.budgetpace.app.core.model.Category
 import com.budgetpace.app.core.model.Transaction
 import com.budgetpace.app.core.money.Money
@@ -60,10 +61,14 @@ class CategorizationNotificationManager @Inject constructor(
             .setCategory(NotificationCompat.CATEGORY_STATUS)
 
         quickCategories.take(MAX_QUICK_CATEGORIES).forEach { category ->
+            // Spec §16/§18: quick-categorize buttons show the category's emoji only — faster to
+            // scan than repeating the name — falling back to the name for categories that
+            // predate the emoji picker.
+            val label = if (isEmojiIcon(category.iconKey)) category.iconKey else category.name
             builder.addAction(
                 NotificationCompat.Action(
                     R.drawable.ic_stat_notification,
-                    category.name,
+                    label,
                     categorizeIntent(transactionId, category.id.toString())
                 )
             )

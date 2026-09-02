@@ -108,7 +108,6 @@ fun AddTransactionRoute(
 ) {
     var amount by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    var selectedTab by remember { mutableStateOf("Expense") }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var showCategoryPicker by remember { mutableStateOf(false) }
 
@@ -129,7 +128,8 @@ fun AddTransactionRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Transaction", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
+                // Spec §7: "+ Add expense", not "Add transaction" — V1 is expense-only, no income.
+                title = { Text("Add expense", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
@@ -137,8 +137,7 @@ fun AddTransactionRoute(
                 },
                 actions = {
                     TextButton(onClick = {
-                        val direction = if (selectedTab == "Income") TransactionDirection.CREDIT else TransactionDirection.DEBIT
-                        viewModel.addTransaction(amount, selectedCategory?.id?.toString(), direction, note)
+                        viewModel.addTransaction(amount, selectedCategory?.id?.toString(), TransactionDirection.DEBIT, note)
                         onBack()
                     }) {
                         Text("Save", color = Color(0xFF4CAF50), style = MaterialTheme.typography.titleMedium)
@@ -157,30 +156,6 @@ fun AddTransactionRoute(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Tabs
-            Row(modifier = Modifier.fillMaxWidth()) {
-                val expenseSelected = selectedTab == "Expense"
-                Column(
-                    modifier = Modifier.weight(1f).clickable { selectedTab = "Expense" }.padding(vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Expense", color = if (expenseSelected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (expenseSelected) FontWeight.Bold else FontWeight.Normal)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(if (expenseSelected) Color(0xFFF44336) else Color.Transparent))
-                }
-                val incomeSelected = selectedTab == "Income"
-                Column(
-                    modifier = Modifier.weight(1f).clickable { selectedTab = "Income" }.padding(vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Income", color = if (incomeSelected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (incomeSelected) FontWeight.Bold else FontWeight.Normal)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(if (incomeSelected) Color(0xFF4CAF50) else Color.Transparent))
-                }
-            }
-
-            Divider(color = MaterialTheme.colorScheme.outline)
-
             Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
 
                 // Amount

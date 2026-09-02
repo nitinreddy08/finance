@@ -5,15 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,11 +45,12 @@ class TransactionsViewModel @Inject constructor(
     transactionRepository: TransactionRepository,
     budgetMonthDao: BudgetMonthDao,
 ) : ViewModel() {
+    // Spec §7: Transactions is expense-only in V1 — there is no income feature at all.
     @OptIn(ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<TransactionsUiState> = budgetMonthDao.observeActiveMonth()
         .filterNotNull()
         .flatMapLatest { month -> transactionRepository.observeWithCategoryByMonth(month.id) }
-        .map { TransactionsUiState.Success(it) }
+        .map { list -> TransactionsUiState.Success(list.filter { it.transaction.direction == TransactionDirection.DEBIT }) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -73,10 +69,11 @@ sealed interface TransactionsUiState {
 fun TransactionsRoute(
     viewModel: TransactionsViewModel,
     onBack: () -> Unit,
-    onTransactionClick: (String) -> Unit
+    onTransactionClick: (String) -> Unit,
+    onAddExpense: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    
+
     when (val state = uiState) {
         is TransactionsUiState.Loading -> {
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
@@ -87,7 +84,8 @@ fun TransactionsRoute(
             TransactionsScreen(
                 transactions = state.transactions,
                 onBack = onBack,
-                onTransactionClick = onTransactionClick
+                onTransactionClick = onTransactionClick,
+                onAddExpense = onAddExpense,
             )
         }
         is TransactionsUiState.Error -> {
@@ -103,22 +101,13 @@ fun TransactionsRoute(
 fun TransactionsScreen(
     transactions: List<com.budgetpace.app.core.model.TransactionWithCategory>,
     onBack: () -> Unit,
-    onTransactionClick: (String) -> Unit
+    onTransactionClick: (String) -> Unit,
+    onAddExpense: () -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf("Expenses") }
-    
-    val filteredTransactions = remember(transactions, selectedTab) {
-        when (selectedTab) {
-            "Expenses" -> transactions.filter { it.transaction.direction == TransactionDirection.DEBIT }
-            "Income" -> transactions.filter { it.transaction.direction == TransactionDirection.CREDIT }
-            else -> transactions
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text("Transactions", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
                 },
                 navigationIcon = {
@@ -128,10 +117,11 @@ fun TransactionsScreen(
                 },
                 actions = {
                     IconButton(onClick = { }) {
-                        Icon(Icons.Default.FilterList, contentDescription = "Filter", tint = MaterialTheme.colorScheme.onBackground)
-                    }
-                    IconButton(onClick = { }) {
                         Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onBackground)
+                    }
+                    // Spec §7: the primary action here is "+ Add expense" — V1 is expense-only.
+                    IconButton(onClick = onAddExpense) {
+                        Icon(Icons.Default.Add, contentDescription = "Add expense", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -143,40 +133,8 @@ fun TransactionsScreen(
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
-            
-            // Toggle
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                val tabs = listOf("All", "Expenses", "Income")
-                tabs.forEach { tab ->
-                    val isSelected = selectedTab == tab
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(if (isSelected) MaterialTheme.colorScheme.onBackground else Color.Transparent)
-                            .clickable { selectedTab = tab }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = tab,
-                            color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
-                        )
-                    }
-                }
-            }
-            
-            // List
             TransactionsList(
-                transactions = filteredTransactions,
+                transactions = transactions,
                 onTransactionClick = onTransactionClick
             )
         }
@@ -259,17 +217,12 @@ private fun TransactionMockupRow(
 ) {
     val transaction = item.transaction
     val category = item.category
-    
+
     val isCredit = transaction.direction == TransactionDirection.CREDIT
     val amountText = Money.formatRupeesWhole(transaction.amountMinor)
     val displayAmount = if (isCredit) "+$amountText" else amountText
     val amountColor = if (isCredit) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onBackground
-    
-    // Fallback UI logic based on direction for mockup purposes
-    val iconColor = if (isCredit) Color(0xFF2E7D32).copy(alpha = 0.2f) else Color(0xFFD32F2F).copy(alpha = 0.2f)
-    val iconTint = if (isCredit) Color(0xFF4CAF50) else Color(0xFFF44336)
-    val iconVector = if (isCredit) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
-    
+
     val payee = transaction.recipient ?: transaction.sender ?: category?.name ?: "Uncategorized"
     val time = transaction.transactionDateTime?.atZone(ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("hh:mm a")) ?: ""
     val categoryName = category?.name ?: "Uncategorized"
@@ -283,22 +236,12 @@ private fun TransactionMockupRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-            // Icon
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(iconColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    iconVector,
-                    contentDescription = if (isCredit) "Income" else "Expense",
-                    tint = iconTint,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            
+            // Spec §7: represent the category by its emoji rather than a generic direction icon.
+            com.budgetpace.app.core.designsystem.components.CategoryIcon(
+                iconKey = category?.iconKey ?: "default",
+                name = categoryName,
+            )
+
             Spacer(modifier = Modifier.width(12.dp))
             
             Column {

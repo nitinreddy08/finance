@@ -60,9 +60,10 @@ fun BudgetPaceNavGraph(
             TransactionsRoute(
                 viewModel = viewModel,
                 onBack = { navController.navigateUp() },
-                onTransactionClick = { id -> 
-                    navController.navigate(Screen.TransactionDetail.createRoute(id)) 
-                }
+                onTransactionClick = { id ->
+                    navController.navigate(Screen.TransactionDetail.createRoute(id))
+                },
+                onAddExpense = { navController.navigate(Screen.AddTransaction.route) },
             )
         }
         

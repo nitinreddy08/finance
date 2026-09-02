@@ -188,15 +188,25 @@ fun CategoryPickerDialog(
             } else {
                 Column {
                     categories.forEach { category ->
-                        Text(
-                            text = category.name,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyLarge,
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onSelect(category.id.toString()) }
-                                .padding(vertical = 12.dp)
-                        )
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            com.budgetpace.app.core.designsystem.components.CategoryIcon(
+                                iconKey = category.iconKey,
+                                name = category.name,
+                                size = 32.dp,
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = category.name,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
                     }
                 }
             }
