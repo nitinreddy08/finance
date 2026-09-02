@@ -30,10 +30,14 @@ import com.budgetpace.app.core.designsystem.theme.bpColors
 import com.budgetpace.app.core.model.Transaction
 import com.budgetpace.app.core.model.TransactionDirection
 import com.budgetpace.app.core.money.Money
+import com.budgetpace.app.data.local.dao.BudgetMonthDao
 import com.budgetpace.app.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.time.LocalDate
@@ -43,9 +47,13 @@ import javax.inject.Inject
 
 @HiltViewModel
 class TransactionsViewModel @Inject constructor(
-    transactionRepository: TransactionRepository
+    transactionRepository: TransactionRepository,
+    budgetMonthDao: BudgetMonthDao,
 ) : ViewModel() {
-    val uiState: StateFlow<TransactionsUiState> = transactionRepository.observeWithCategoryByMonth("")
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val uiState: StateFlow<TransactionsUiState> = budgetMonthDao.observeActiveMonth()
+        .filterNotNull()
+        .flatMapLatest { month -> transactionRepository.observeWithCategoryByMonth(month.id) }
         .map { TransactionsUiState.Success(it) }
         .stateIn(
             scope = viewModelScope,

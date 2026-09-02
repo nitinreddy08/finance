@@ -95,6 +95,13 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): TransactionEntity?
 
+    @Query("""
+        SELECT * FROM transactions
+        WHERE monthId = :monthId AND recordDecision = 'RECORDED'
+        ORDER BY transactionDate DESC, createdAt DESC
+    """)
+    suspend fun getRecordedByMonth(monthId: String): List<TransactionEntity>
+
     @Query("SELECT * FROM transactions WHERE syncState = 'PENDING'")
     suspend fun getPending(): List<TransactionEntity>
 
@@ -125,6 +132,16 @@ interface TransactionDao {
         WHERE id = :id
     """)
     suspend fun updateCategory(id: String, categoryId: String?, now: Long)
+
+    @Query("""
+        UPDATE transactions
+        SET recordDecision = :recordDecision, syncState = 'PENDING', updatedAt = :now
+        WHERE id = :id
+    """)
+    suspend fun updateRecordDecision(id: String, recordDecision: String, now: Long)
+
+    @Query("UPDATE transactions SET syncState = 'SYNCED', updatedAt = :now WHERE id = :id")
+    suspend fun markSynced(id: String, now: Long)
 }
 
 // ─── CarryForwardDao ──────────────────────────────────────────────────────────

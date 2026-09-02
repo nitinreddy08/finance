@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Required on API 33+ to post the categorization notification (spec §21). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".BudgetPaceApp"
         android:allowBackup="false"
@@ -28,6 +31,10 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".notification.presenter.CategorizationActionReceiver"
+            android:exported="false" />
 
     </application>
 

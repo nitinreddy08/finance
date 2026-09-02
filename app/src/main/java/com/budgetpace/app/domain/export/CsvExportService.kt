@@ -6,6 +6,7 @@ import android.os.Environment
 import com.budgetpace.app.core.money.Money
 import com.budgetpace.app.data.local.dao.TransactionDao
 import com.budgetpace.app.data.local.mapper.toDomain
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -15,7 +16,7 @@ import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 class CsvExportService @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
     private val transactionDao: TransactionDao
 ) {
     /**
@@ -24,12 +25,9 @@ class CsvExportService @Inject constructor(
      */
     suspend fun exportMonthToCsv(monthId: String): Result<Uri> = withContext(Dispatchers.IO) {
         try {
-            // Fetch all recorded transactions for the month
-            val entities = transactionDao.observeByMonth(monthId) // Note: Dao needs a one-shot query, but this works for demo
-            
-            // In a real app we'd fetch directly, for this mock we'll assume a direct fetch method exists
-            val transactions = emptyList<com.budgetpace.app.core.model.Transaction>() // placeholder
-            
+            // Fetch all recorded transactions for the month (one-shot, not the observing Flow)
+            val transactions = transactionDao.getRecordedByMonth(monthId).map { it.toDomain() }
+
             val fileName = "BudgetPace_Export_${LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)}.csv"
             
             // App-specific external documents directory

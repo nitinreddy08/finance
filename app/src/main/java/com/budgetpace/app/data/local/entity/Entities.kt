@@ -64,6 +64,11 @@ data class CategoryEntity(
         Index("transactionDate"),
         Index("syncState"),
         Index(value = ["bank", "referenceNumber"], unique = true, name = "idx_bank_ref"),
+        // Fallback duplicate detection per spec §19: SQLite treats each NULL as distinct,
+        // so rows without a fingerprint (e.g. reference-number duplicates already caught
+        // above) never collide here, while two rows sharing the same non-null fallback
+        // fingerprint are rejected as duplicates.
+        Index(value = ["duplicateKey"], unique = true, name = "idx_duplicate_key"),
     ]
 )
 data class TransactionEntity(

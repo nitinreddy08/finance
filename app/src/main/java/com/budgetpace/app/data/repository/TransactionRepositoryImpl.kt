@@ -41,4 +41,11 @@ class TransactionRepositoryImpl(
     override suspend fun delete(id: String) {
         transactionDao.deleteById(id)
     }
+
+    override suspend fun getPending(): List<Transaction> =
+        transactionDao.getPending().map { it.toDomain() }
+
+    override suspend fun markSynced(id: String) {
+        transactionDao.markSynced(id, java.time.Instant.now().toEpochMilli())
+    }
 }

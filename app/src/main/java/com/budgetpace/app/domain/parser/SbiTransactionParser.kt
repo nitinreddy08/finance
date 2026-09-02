@@ -3,9 +3,11 @@ package com.budgetpace.app.domain.parser
 import com.budgetpace.app.core.model.Bank
 import com.budgetpace.app.core.model.ParseConfidence
 import com.budgetpace.app.core.model.TransactionDirection
+import com.budgetpace.app.core.money.Money
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.util.Locale
 import java.util.regex.Pattern
 
 class SbiTransactionParser : BankTransactionParser {
@@ -30,13 +32,14 @@ class SbiTransactionParser : BankTransactionParser {
             try {
                 val accountSuffix = debitMatcher.group(1)
                 val amountStr = debitMatcher.group(2)?.replace(",", "") ?: return null
-                val amountMinor = (amountStr.toDouble() * 100).toLong()
+                val amountMinor = Money.rupeesToPaise(amountStr)
                 val dateStr = debitMatcher.group(3)
                 val recipient = debitMatcher.group(4)?.trim()
                 val refNumber = debitMatcher.group(5)
-                
-                // Format: 26Jul26
-                val formatter = DateTimeFormatter.ofPattern("ddMMMyy")
+
+                // Format: 26Jul26 — pin Locale.ENGLISH so month-name parsing doesn't
+                // depend on the device's default locale.
+                val formatter = DateTimeFormatter.ofPattern("ddMMMyy", Locale.ENGLISH)
                 val date = try {
                     LocalDate.parse(dateStr, formatter)
                 } catch (e: DateTimeParseException) {

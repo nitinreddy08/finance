@@ -1,15 +1,20 @@
 package com.budgetpace.app.feature.transactions
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,24 +25,30 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.budgetpace.app.core.model.Category
+import com.budgetpace.app.core.model.SyncState
 import com.budgetpace.app.core.model.Transaction
 import com.budgetpace.app.core.model.TransactionDirection
 import com.budgetpace.app.core.money.Money
+import com.budgetpace.app.data.local.dao.CategoryDao
+import com.budgetpace.app.data.local.mapper.toDomain
 import com.budgetpace.app.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 @HiltViewModel
 class TransactionDetailViewModel @Inject constructor(
-    private val transactionRepository: TransactionRepository
+    private val transactionRepository: TransactionRepository,
+    private val categoryDao: CategoryDao,
 ) : ViewModel() {
 
     private val transactionId = MutableStateFlow<String?>(null)
-    
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<TransactionDetailUiState> = transactionId
         .filterNotNull()
@@ -48,15 +59,41 @@ class TransactionDetailViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = TransactionDetailUiState.Loading
         )
-    
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val availableCategories: StateFlow<List<Category>> = uiState
+        .map { (it as? TransactionDetailUiState.Success)?.item?.transaction?.monthId?.toString() }
+        .filterNotNull()
+        .distinctUntilChanged()
+        .flatMapLatest { monthId -> categoryDao.observeByMonth(monthId) }
+        .map { list -> list.map { it.toDomain() } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     fun setTransactionId(id: String) {
         transactionId.value = id
     }
-    
+
+    fun changeCategory(categoryId: String) {
+        val current = (uiState.value as? TransactionDetailUiState.Success)?.item?.transaction ?: return
+        viewModelScope.launch {
+            transactionRepository.update(
+                current.copy(
+                    categoryId = java.util.UUID.fromString(categoryId),
+                    syncState = SyncState.PENDING,
+                    updatedAt = Instant.now(),
+                )
+            )
+        }
+    }
+
     fun deleteTransaction() {
         viewModelScope.launch {
-            transactionId.value?.let { 
-                transactionRepository.delete(it) 
+            transactionId.value?.let {
+                transactionRepository.delete(it)
             }
         }
     }
@@ -75,7 +112,9 @@ fun TransactionDetailRoute(
     onBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    
+    val categories by viewModel.availableCategories.collectAsStateWithLifecycle()
+    var showCategoryPicker by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -86,8 +125,15 @@ fun TransactionDetailRoute(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { /* Edit Action */ }) {
-                        Text("Edit", color = Color(0xFF4CAF50), style = MaterialTheme.typography.titleMedium)
+                    // Spec §43: [ Change category ] [ Delete ]
+                    TextButton(onClick = { showCategoryPicker = true }) {
+                        Text("Change category", color = Color(0xFF4CAF50), style = MaterialTheme.typography.labelLarge)
+                    }
+                    IconButton(onClick = {
+                        viewModel.deleteTransaction()
+                        onBack()
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFF44336))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -109,10 +155,56 @@ fun TransactionDetailRoute(
                     item = state.item,
                     modifier = Modifier.padding(innerPadding)
                 )
+                if (showCategoryPicker) {
+                    CategoryPickerDialog(
+                        categories = categories,
+                        onDismiss = { showCategoryPicker = false },
+                        onSelect = { categoryId ->
+                            viewModel.changeCategory(categoryId)
+                            showCategoryPicker = false
+                        }
+                    )
+                }
             }
             is TransactionDetailUiState.Error -> {}
         }
     }
+}
+
+@Composable
+fun CategoryPickerDialog(
+    categories: List<com.budgetpace.app.core.model.Category>,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E1F24),
+        titleContentColor = Color.White,
+        title = { Text("Change category") },
+        text = {
+            if (categories.isEmpty()) {
+                Text("No categories yet.", color = Color.Gray)
+            } else {
+                Column {
+                    categories.forEach { category ->
+                        Text(
+                            text = category.name,
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(category.id.toString()) }
+                                .padding(vertical = 12.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
+        }
+    )
 }
 
 @Composable
@@ -129,7 +221,11 @@ fun TransactionDetailScreen(
     val iconVector = if (isCredit) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
     
     val timeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy, hh:mm a")
-    val timeString = transaction.transactionDateTime?.atZone(ZoneId.systemDefault())?.format(timeFormatter) ?: "2 Sep 2026, 11:02 AM"
+    val dateOnlyFormatter = DateTimeFormatter.ofPattern("d MMM yyyy")
+    // Spec §17: the bank only sometimes supplies a time; fall back to the date-only value
+    // rather than inventing a time that was never reported.
+    val timeString = transaction.transactionDateTime?.atZone(ZoneId.systemDefault())?.format(timeFormatter)
+        ?: transaction.transactionDate.format(dateOnlyFormatter)
 
     Column(
         modifier = modifier
@@ -168,11 +264,12 @@ fun TransactionDetailScreen(
         
         Spacer(modifier = Modifier.height(48.dp))
         
-        // Details Grid
+        // Details Grid — never fabricate a value the transaction doesn't actually have.
         DetailRow("Date & Time", timeString)
-        DetailRow("Payee", transaction.recipient ?: transaction.sender ?: category?.name ?: "Paytm UPI")
-        DetailRow("UPI Ref", transaction.referenceNumber ?: "621859049153")
-        
+        DetailRow("Payee", transaction.recipient ?: transaction.sender ?: "—")
+        DetailRow("Bank", "${transaction.bank.name}${transaction.accountSuffix?.let { " •••$it" } ?: ""}")
+        DetailRow("UPI Ref", transaction.referenceNumber ?: "—")
+
         // Category with dot
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
@@ -181,9 +278,10 @@ fun TransactionDetailScreen(
         ) {
             Text("Category", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(category?.name ?: "Miscellaneous", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                Text(category?.name ?: "Uncategorized", style = MaterialTheme.typography.bodyLarge, color = Color.White)
                 Spacer(modifier = Modifier.width(6.dp))
-                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFFF9800)))
+                val dotColor = if (category != null) Color(0xFF4CAF50) else Color(0xFF6B7280)
+                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(dotColor))
             }
         }
         Divider(color = Color(0xFF2A2D35))

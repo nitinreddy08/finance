@@ -30,16 +30,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
 class CategoriesViewModel @Inject constructor(
     budgetRepository: BudgetRepository
 ) : ViewModel() {
-    
-    // Passing empty string for phase testing
-    val uiState: StateFlow<CategoriesUiState> = budgetRepository.observeMonthSummary(UUID.randomUUID().toString())
+
+    val uiState: StateFlow<CategoriesUiState> = budgetRepository.observeActiveMonthSummary()
         .map { summary -> CategoriesUiState.Success(summary?.categories ?: emptyList()) }
         .stateIn(
             scope = viewModelScope,

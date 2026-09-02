@@ -3,9 +3,11 @@ package com.budgetpace.app.domain.parser
 import com.budgetpace.app.core.model.Bank
 import com.budgetpace.app.core.model.ParseConfidence
 import com.budgetpace.app.core.model.TransactionDirection
+import com.budgetpace.app.core.money.Money
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.util.Locale
 import java.util.regex.Pattern
 
 class KotakTransactionParser : BankTransactionParser {
@@ -47,13 +49,13 @@ class KotakTransactionParser : BankTransactionParser {
     private fun parseMatch(matcher: java.util.regex.Matcher, direction: TransactionDirection): ParsedTransaction? {
         try {
             val amountStr = matcher.group(1)?.replace(",", "") ?: return null
-            val amountMinor = (amountStr.toDouble() * 100).toLong()
+            val amountMinor = Money.rupeesToPaise(amountStr)
             val accountSuffix = matcher.group(2)
             val party = matcher.group(3)
             val dateStr = matcher.group(4)
             val refNumber = matcher.group(5)
-            
-            val formatter = DateTimeFormatter.ofPattern("dd-MM-yy")
+
+            val formatter = DateTimeFormatter.ofPattern("dd-MM-yy", Locale.ENGLISH)
             val date = try {
                 LocalDate.parse(dateStr, formatter)
             } catch (e: DateTimeParseException) {

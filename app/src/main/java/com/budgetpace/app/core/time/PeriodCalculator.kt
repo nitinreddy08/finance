@@ -43,13 +43,21 @@ object PeriodCalculator {
         periodsFor(date.year, date.monthValue)
 
     fun periodsForDays(year: Int, month: Int, daysInMonth: Int): List<MonthPeriod> {
-        val base = daysInMonth / 4
-        val remainder = daysInMonth % 4   // first `remainder` periods get +1 day
-
+        // Deterministic even split via cumulative ceiling division:
+        //   cumulative(i) = ceil(daysInMonth * (i + 1) / 4)
+        //   periodDays(i)  = cumulative(i) - cumulative(i - 1), cumulative(-1) = 0
+        // This reproduces the spec's §26 worked examples exactly:
+        //   28 days -> 7 / 7 / 7 / 7
+        //   30 days -> 8 / 7 / 8 / 7
+        //   31 days -> 8 / 8 / 8 / 7
         val periods = mutableListOf<MonthPeriod>()
         var dayOffset = 1
+        var previousCumulative = 0
         for (i in 0 until 4) {
-            val periodDays = base + if (i < remainder) 1 else 0
+            val cumulative = ceilDiv(daysInMonth * (i + 1), 4)
+            val periodDays = cumulative - previousCumulative
+            previousCumulative = cumulative
+
             val start = LocalDate.of(year, month, dayOffset)
             val end = LocalDate.of(year, month, dayOffset + periodDays - 1)
             periods += MonthPeriod(periodIndex = i, startDate = start, endDate = end)
@@ -57,6 +65,9 @@ object PeriodCalculator {
         }
         return periods
     }
+
+    private fun ceilDiv(numerator: Int, denominator: Int): Int =
+        (numerator + denominator - 1) / denominator
 
     /**
      * Returns which period index (0-based) the [date] falls into,

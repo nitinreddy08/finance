@@ -28,13 +28,10 @@ class PeriodCalculatorTest {
         val periods = PeriodCalculator.periodsFor(2026, 9)
         assertEquals(4, periods.size)
         
-        // 30 days -> 8 / 7 / 8 / 7 (since remainder 2 gives +1 to first 2 periods, wait... 30/4=7 remainder 2. So 8, 8, 7, 7)
-        // Wait, the spec says "8 / 7 / 8 / 7" as an example for 30 days. Let's check my implementation:
-        // Implementation: i < remainder gets +1. So period 0 and 1 get +1. That means 8, 8, 7, 7.
-        // It differs slightly from "8/7/8/7" alternating pattern, but is mathematically fair and deterministic.
+        // 30 days -> 8 / 7 / 8 / 7 per spec §26
         assertEquals(8, periods[0].days)
-        assertEquals(8, periods[1].days)
-        assertEquals(7, periods[2].days)
+        assertEquals(7, periods[1].days)
+        assertEquals(8, periods[2].days)
         assertEquals(7, periods[3].days)
         
         val totalDays = periods.sumOf { it.days }

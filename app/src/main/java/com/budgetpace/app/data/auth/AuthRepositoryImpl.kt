@@ -8,6 +8,7 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.budgetpace.app.domain.auth.AuthRepository
 import com.budgetpace.app.domain.auth.UserSession
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,7 +17,7 @@ import javax.inject.Singleton
 
 @Singleton
 class AuthRepositoryImpl @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) : AuthRepository {
 
     private val credentialManager = CredentialManager.create(context)
@@ -26,10 +27,13 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun signInWithGoogle(context: Context): Result<UserSession> {
         return try {
-            // Usually this requires a Web Client ID from Google Cloud Console
+            // Spec §7: the web client ID identifies *this app's* OAuth client to Google and must
+            // come from the developer's own Google Cloud project — read it from BuildConfig
+            // (sourced from local.properties' GOOGLE_CLIENT_ID) rather than a hardcoded value
+            // that would only work for whoever's project it was copied from.
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
-                .setServerClientId("579588306520-pup0r8t68vfd22nelv8neol8lqij82gj.apps.googleusercontent.com") // Placeholder for dev
+                .setServerClientId(com.budgetpace.app.BuildConfig.GOOGLE_CLIENT_ID)
                 .build()
 
             val request = GetCredentialRequest.Builder()

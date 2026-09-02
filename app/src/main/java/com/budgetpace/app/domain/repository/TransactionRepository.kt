@@ -10,4 +10,8 @@ interface TransactionRepository {
     suspend fun add(transaction: Transaction)
     suspend fun update(transaction: Transaction)
     suspend fun delete(id: String)
+
+    /** Spec §52: transactions across all months still waiting to reach the user's Google Sheet. */
+    suspend fun getPending(): List<Transaction>
+    suspend fun markSynced(id: String)
 }

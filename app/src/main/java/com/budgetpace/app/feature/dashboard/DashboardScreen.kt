@@ -181,11 +181,6 @@ fun DashboardScreen(summary: MonthSummary) {
                             color = Color.Gray
                         )
                     }
-                    // Placeholder for Line Chart sparkline
-                    Box(modifier = Modifier.width(80.dp).height(40.dp), contentAlignment = Alignment.Center) {
-                        // Drawing a simple mock sparkline for now
-                        Text("〰〰〰", color = Color(0xFF4CAF50), fontSize = 24.sp)
-                    }
                 }
             }
         }

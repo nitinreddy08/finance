@@ -100,13 +100,13 @@ object BudgetEngine {
         today: LocalDate
     ): CategorySummary {
         val totalSpentMinor = transactions.filter { it.direction == TransactionDirection.DEBIT }.sumOf { it.amountMinor }
-        
-        val periodBudgets = if (category.weeklyPacingEnabled) {
-            PeriodCalculator.splitBudget(category.monthlyBudgetMinor, periods)
-        } else {
-            // If weekly pacing is disabled (e.g. Rent), allocate full budget to period 0, or handle specially
-            LongArray(4) { 0L }.apply { this[0] = category.monthlyBudgetMinor }
-        }
+
+        // Per spec §24/§31: a category with weeklyPacingEnabled = false (e.g. Rent) still
+        // participates in the overall monthly budget/spending/pace with its fair per-period
+        // share — only its OWN four-tile breakdown is hidden in the UI (category.weeklyPacingEnabled
+        // is the flag the UI reads for that). Dumping the whole budget into period 0 here would
+        // wrongly inflate period 0 and starve periods 1-3 of the overall four-period pace.
+        val periodBudgets = PeriodCalculator.splitBudget(category.monthlyBudgetMinor, periods)
         
         val periodSummaries = periods.map { period ->
             val periodSpent = transactions
