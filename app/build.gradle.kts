@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,10 +9,10 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-val localProperties = java.util.Properties()
+val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
-    localProperties.load(java.io.FileInputStream(localPropertiesFile))
+    localProperties.load(FileInputStream(localPropertiesFile))
 }
 val googleClientId = localProperties.getProperty("GOOGLE_CLIENT_ID") ?: "\"YOUR_WEB_CLIENT_ID_HERE\""
 
