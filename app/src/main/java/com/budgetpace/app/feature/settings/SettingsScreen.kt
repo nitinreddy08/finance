@@ -168,8 +168,9 @@ fun SettingsScreen(
 
         item {
             SettingsSectionHeader("BANK NOTIFICATIONS")
-            SettingsMockupItem(icon = "🏦", title = "Kotak", subtitle = "Enabled")
-            SettingsMockupItem(icon = "🏦", title = "SBI", subtitle = "Enabled")
+            // Android's notification-listener permission is a single global grant, not
+            // per-bank — there's no real per-bank state to show, so don't imply one.
+            SettingsMockupItem(icon = "🏦", title = "Supported banks", subtitle = "Kotak, SBI")
             SettingsMockupItem(
                 icon = "🔔",
                 title = "Notification access",

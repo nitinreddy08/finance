@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budgetpace.app.core.designsystem.components.CategoryIcon
+import com.budgetpace.app.core.designsystem.theme.bpColors
 import com.budgetpace.app.core.model.BudgetStatus
 import com.budgetpace.app.core.model.CategorySummary
 import com.budgetpace.app.core.model.PeriodStatus
@@ -224,11 +225,11 @@ private fun LabeledAmount(label: String, value: String) {
 @Composable
 private fun PeriodBar(period: PeriodSummary, modifier: Modifier = Modifier) {
     val color = when (period.paceStatus) {
-        BudgetStatus.GREEN -> Color(0xFF4CAF50)
-        BudgetStatus.ORANGE -> Color(0xFFFF9800)
-        BudgetStatus.RED -> Color(0xFFF44336)
+        BudgetStatus.GREEN -> MaterialTheme.bpColors.statusGreen
+        BudgetStatus.ORANGE -> MaterialTheme.bpColors.statusOrange
+        BudgetStatus.RED -> MaterialTheme.bpColors.statusRed
         BudgetStatus.GREY -> MaterialTheme.colorScheme.outline
-        BudgetStatus.CURRENT -> Color(0xFF64B5F6)
+        BudgetStatus.CURRENT -> MaterialTheme.bpColors.statusBlue
     }
     val filled = if (period.periodStatus == PeriodStatus.UPCOMING || period.effectiveBudgetMinor <= 0) 0f
     else (period.spentMinor.toFloat() / period.effectiveBudgetMinor).coerceIn(0f, 1f)

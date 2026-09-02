@@ -16,11 +16,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budgetpace.app.core.designsystem.components.CategoryIcon
+import com.budgetpace.app.core.designsystem.theme.bpColors
 import com.budgetpace.app.core.model.BudgetStatus
 import com.budgetpace.app.core.model.CategorySummary
 import com.budgetpace.app.core.model.MonthSummary
@@ -215,22 +218,33 @@ fun DashboardScreen(summary: MonthSummary, onCategoryClick: (String) -> Unit = {
 
 @Composable
 private fun statusColor(status: BudgetStatus): Color = when (status) {
-    BudgetStatus.GREEN -> Color(0xFF4CAF50)
-    BudgetStatus.ORANGE -> Color(0xFFFF9800)
-    BudgetStatus.RED -> Color(0xFFF44336)
+    BudgetStatus.GREEN -> MaterialTheme.bpColors.statusGreen
+    BudgetStatus.ORANGE -> MaterialTheme.bpColors.statusOrange
+    BudgetStatus.RED -> MaterialTheme.bpColors.statusRed
     BudgetStatus.GREY -> MaterialTheme.colorScheme.outline
-    BudgetStatus.CURRENT -> Color(0xFF64B5F6)
+    BudgetStatus.CURRENT -> MaterialTheme.bpColors.statusBlue
 }
 
 @Composable
 private fun PaceSegment(period: PeriodSummary, modifier: Modifier = Modifier) {
     val filled = if (period.periodStatus == PeriodStatus.UPCOMING || period.effectiveBudgetMinor <= 0) 0f
     else (period.spentMinor.toFloat() / period.effectiveBudgetMinor).coerceIn(0f, 1f)
+    // The bar communicates status by color+fill alone visually (spec's minimal-wording rule) —
+    // this is the screen-reader-only equivalent, not a visible label.
+    val statusDescription = when (period.periodStatus) {
+        PeriodStatus.UPCOMING -> "upcoming"
+        PeriodStatus.CURRENT -> "current"
+        PeriodStatus.COMPLETED -> "completed"
+    }
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            .semantics {
+                contentDescription = "Period ${period.periodIndex + 1}, $statusDescription, " +
+                    "${Money.formatRupeesWhole(period.spentMinor)} of ${Money.formatRupeesWhole(period.effectiveBudgetMinor)}"
+            }
     ) {
         Box(
             modifier = Modifier
@@ -266,7 +280,10 @@ private fun CategoryPaceItem(summary: CategorySummary, onClick: () -> Unit) {
                 .width(6.dp)
                 .height(48.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                .semantics {
+                    contentDescription = "${summary.category.name}, ${Money.formatRupeesWhole(summary.totalSpentMinor)} spent, $pct% of budget"
+                },
             contentAlignment = Alignment.BottomCenter
         ) {
             Box(
