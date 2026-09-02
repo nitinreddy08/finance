@@ -29,8 +29,9 @@ object RepositoryModule {
     @Provides
     @Singleton
     fun provideTransactionRepository(
-        transactionDao: TransactionDao
+        transactionDao: TransactionDao,
+        deletedTransactionDao: DeletedTransactionDao,
     ): TransactionRepository {
-        return TransactionRepositoryImpl(transactionDao)
+        return TransactionRepositoryImpl(transactionDao, deletedTransactionDao)
     }
 }

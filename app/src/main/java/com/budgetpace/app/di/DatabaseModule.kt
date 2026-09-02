@@ -31,4 +31,7 @@ object DatabaseModule {
 
     @Provides
     fun provideCarryForwardDao(db: BudgetDatabase): CarryForwardDao = db.carryForwardDao()
+
+    @Provides
+    fun provideDeletedTransactionDao(db: BudgetDatabase): DeletedTransactionDao = db.deletedTransactionDao()
 }

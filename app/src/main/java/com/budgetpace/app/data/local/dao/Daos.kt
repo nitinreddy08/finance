@@ -180,3 +180,17 @@ interface CarryForwardDao {
     @Delete
     suspend fun delete(cf: CarryForwardEntity)
 }
+
+// ─── DeletedTransactionDao (sync tombstones) ───────────────────────────────────
+@Dao
+interface DeletedTransactionDao {
+
+    @Query("SELECT * FROM deleted_transactions")
+    suspend fun getAll(): List<DeletedTransactionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: DeletedTransactionEntity)
+
+    @Query("DELETE FROM deleted_transactions WHERE transactionId = :transactionId")
+    suspend fun deleteById(transactionId: String)
+}

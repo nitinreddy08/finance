@@ -13,8 +13,9 @@ import com.budgetpace.app.data.local.entity.*
         CategoryEntity::class,
         TransactionEntity::class,
         CarryForwardEntity::class,
+        DeletedTransactionEntity::class,
     ],
-    version = 1,
+    version = 2,
     // No room.schemaLocation is configured (and nothing consumes exported schema files yet),
     // so exporting just produces the "schema export directory was not provided" build warning.
     exportSchema = false,
@@ -25,6 +26,7 @@ abstract class BudgetDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun transactionDao(): TransactionDao
     abstract fun carryForwardDao(): CarryForwardDao
+    abstract fun deletedTransactionDao(): DeletedTransactionDao
 
     companion object {
         @Volatile private var INSTANCE: BudgetDatabase? = null

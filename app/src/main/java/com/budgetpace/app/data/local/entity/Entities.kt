@@ -125,3 +125,13 @@ data class CarryForwardEntity(
     val amountMinor: Long,
     val createdAt: Long,
 )
+
+// ─── DeletedTransaction (sync tombstone) ───────────────────────────────────────
+// A local hard-delete (TransactionRepositoryImpl.delete) removes the transaction row itself, so
+// there's nothing left to look up by UUID once it's gone — this tombstone is what lets the next
+// Sheets sync find and clear the now-orphaned row in the backup spreadsheet, then delete itself.
+@Entity(tableName = "deleted_transactions")
+data class DeletedTransactionEntity(
+    @PrimaryKey val transactionId: String,
+    val deletedAt: Long,
+)
