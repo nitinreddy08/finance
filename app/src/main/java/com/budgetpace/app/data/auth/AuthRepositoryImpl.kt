@@ -29,7 +29,7 @@ class AuthRepositoryImpl @Inject constructor(
             // Usually this requires a Web Client ID from Google Cloud Console
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(com.budgetpace.app.BuildConfig.GOOGLE_CLIENT_ID) // Placeholder for dev
+                .setServerClientId("579588306520-pup0r8t68vfd22nelv8neol8lqij82gj.apps.googleusercontent.com") // Placeholder for dev
                 .build()
 
             val request = GetCredentialRequest.Builder()
