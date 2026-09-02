@@ -45,7 +45,7 @@ import javax.inject.Inject
 class TransactionsViewModel @Inject constructor(
     transactionRepository: TransactionRepository
 ) : ViewModel() {
-    val uiState: StateFlow<TransactionsUiState> = transactionRepository.observeByMonth("")
+    val uiState: StateFlow<TransactionsUiState> = transactionRepository.observeWithCategoryByMonth("")
         .map { TransactionsUiState.Success(it) }
         .stateIn(
             scope = viewModelScope,
@@ -56,7 +56,7 @@ class TransactionsViewModel @Inject constructor(
 
 sealed interface TransactionsUiState {
     object Loading : TransactionsUiState
-    data class Success(val transactions: List<Transaction>) : TransactionsUiState
+    data class Success(val transactions: List<com.budgetpace.app.core.model.TransactionWithCategory>) : TransactionsUiState
     object Error : TransactionsUiState
 }
 
@@ -93,7 +93,7 @@ fun TransactionsRoute(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
-    transactions: List<Transaction>,
+    transactions: List<com.budgetpace.app.core.model.TransactionWithCategory>,
     onBack: () -> Unit,
     onTransactionClick: (String) -> Unit
 ) {
@@ -101,8 +101,8 @@ fun TransactionsScreen(
     
     val filteredTransactions = remember(transactions, selectedTab) {
         when (selectedTab) {
-            "Expenses" -> transactions.filter { it.direction == TransactionDirection.DEBIT }
-            "Income" -> transactions.filter { it.direction == TransactionDirection.CREDIT }
+            "Expenses" -> transactions.filter { it.transaction.direction == TransactionDirection.DEBIT }
+            "Income" -> transactions.filter { it.transaction.direction == TransactionDirection.CREDIT }
             else -> transactions
         }
     }
@@ -177,15 +177,15 @@ fun TransactionsScreen(
 
 @Composable
 fun TransactionsList(
-    transactions: List<Transaction>,
+    transactions: List<com.budgetpace.app.core.model.TransactionWithCategory>,
     onTransactionClick: (String) -> Unit
 ) {
     // Sort transactions by descending date, then by time if available
     val sorted = transactions.sortedWith(
-        compareByDescending<Transaction> { it.transactionDate }
-            .thenByDescending { it.transactionDateTime }
+        compareByDescending<com.budgetpace.app.core.model.TransactionWithCategory> { it.transaction.transactionDate }
+            .thenByDescending { it.transaction.transactionDateTime }
     )
-    val grouped = sorted.groupBy { it.transactionDate }
+    val grouped = sorted.groupBy { it.transaction.transactionDate }
     
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -206,7 +206,7 @@ fun TransactionsList(
 }
 
 @Composable
-private fun DateHeader(date: LocalDate, dailyTxns: List<Transaction>) {
+private fun DateHeader(date: LocalDate, dailyTxns: List<com.budgetpace.app.core.model.TransactionWithCategory>) {
     val formatter = DateTimeFormatter.ofPattern("d MMM")
     val today = LocalDate.now()
     val yesterday = today.minusDays(1)
@@ -218,7 +218,7 @@ private fun DateHeader(date: LocalDate, dailyTxns: List<Transaction>) {
     }
     
     // Calculate net or total amount (mockup shows sum of expenses if on expenses tab, here we'll just sum all for simplicity)
-    val totalMinor = dailyTxns.filter { it.direction == TransactionDirection.DEBIT }.sumOf { it.amountMinor }
+    val totalMinor = dailyTxns.filter { it.transaction.direction == TransactionDirection.DEBIT }.sumOf { it.transaction.amountMinor }
     val displayTotal = if (totalMinor > 0) Money.formatRupeesWhole(totalMinor) else ""
     
     Row(
@@ -246,9 +246,12 @@ private fun DateHeader(date: LocalDate, dailyTxns: List<Transaction>) {
 
 @Composable
 private fun TransactionMockupRow(
-    transaction: Transaction,
+    item: com.budgetpace.app.core.model.TransactionWithCategory,
     onClick: () -> Unit
 ) {
+    val transaction = item.transaction
+    val category = item.category
+    
     val isCredit = transaction.direction == TransactionDirection.CREDIT
     val amountText = Money.formatRupeesWhole(transaction.amountMinor)
     val displayAmount = if (isCredit) "+$amountText" else amountText
@@ -259,9 +262,9 @@ private fun TransactionMockupRow(
     val iconTint = if (isCredit) Color(0xFF4CAF50) else Color(0xFFF44336)
     val iconVector = if (isCredit) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
     
-    val payee = transaction.recipient ?: transaction.sender ?: "Miscellaneous"
+    val payee = transaction.recipient ?: transaction.sender ?: category?.name ?: "Miscellaneous"
     val time = transaction.transactionDateTime?.atZone(ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("hh:mm a")) ?: ""
-    val categoryName = "Miscellaneous" // In a real app this would join with the Category table
+    val categoryName = category?.name ?: "Miscellaneous"
     
     Row(
         modifier = Modifier

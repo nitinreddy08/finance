@@ -66,6 +66,18 @@ interface CategoryDao {
 @Dao
 interface TransactionDao {
 
+    @androidx.room.Transaction
+    @Query("""
+        SELECT * FROM transactions
+        WHERE monthId = :monthId AND recordDecision = 'RECORDED'
+        ORDER BY transactionDate DESC, createdAt DESC
+    """)
+    fun observeWithCategoryByMonth(monthId: String): Flow<List<TransactionWithCategoryEntity>>
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
+    fun observeWithCategoryById(id: String): Flow<TransactionWithCategoryEntity?>
+
     @Query("""
         SELECT * FROM transactions
         WHERE monthId = :monthId AND recordDecision = 'RECORDED'

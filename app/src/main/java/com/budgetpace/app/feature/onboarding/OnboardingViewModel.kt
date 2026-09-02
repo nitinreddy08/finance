@@ -1,5 +1,6 @@
 package com.budgetpace.app.feature.onboarding
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budgetpace.app.core.model.BudgetMonth
@@ -8,7 +9,10 @@ import com.budgetpace.app.core.model.MonthStatus
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
 import com.budgetpace.app.data.local.dao.CategoryDao
 import com.budgetpace.app.data.local.mapper.toEntity
+import com.budgetpace.app.domain.auth.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -18,8 +22,19 @@ import javax.inject.Inject
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
     private val budgetMonthDao: BudgetMonthDao,
-    private val categoryDao: CategoryDao
+    private val categoryDao: CategoryDao,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
+
+    private val _signInState = MutableStateFlow<Boolean?>(null)
+    val signInState = _signInState.asStateFlow()
+
+    fun signInWithGoogle(context: Context) {
+        viewModelScope.launch {
+            val result = authRepository.signInWithGoogle(context)
+            _signInState.value = result.isSuccess
+        }
+    }
 
     fun completeOnboarding(incomeMinor: Long, selectedCategories: List<String>) {
         viewModelScope.launch {
@@ -46,7 +61,7 @@ class OnboardingViewModel @Inject constructor(
                     monthId = monthId,
                     name = name,
                     monthlyBudgetMinor = budgetPerCategory,
-                    weeklyPacingEnabled = true, // By default enable 4-period pacing
+                    weeklyPacingEnabled = true,
                     iconKey = "default",
                     sortOrder = index,
                     active = true,

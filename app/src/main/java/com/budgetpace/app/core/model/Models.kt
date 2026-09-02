@@ -77,6 +77,11 @@ data class Transaction(
     val updatedAt: Instant,
 )
 
+data class TransactionWithCategory(
+    val transaction: Transaction,
+    val category: Category?
+)
+
 data class BudgetCarryForward(
     val id: UUID,
     val monthId: UUID,

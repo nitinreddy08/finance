@@ -38,12 +38,19 @@ class TransactionDetailViewModel @Inject constructor(
 
     private val transactionId = MutableStateFlow<String?>(null)
     
-    // In a real app we'd query by ID. For now returning dummy state.
-    val uiState: StateFlow<TransactionDetailUiState> = MutableStateFlow(TransactionDetailUiState.Loading)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val uiState: StateFlow<TransactionDetailUiState> = transactionId
+        .filterNotNull()
+        .flatMapLatest { id -> transactionRepository.observeWithCategoryById(id) }
+        .map { if (it != null) TransactionDetailUiState.Success(it) else TransactionDetailUiState.Error }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = TransactionDetailUiState.Loading
+        )
     
     fun setTransactionId(id: String) {
         transactionId.value = id
-        // Load transaction logic
     }
     
     fun deleteTransaction() {
@@ -57,7 +64,7 @@ class TransactionDetailViewModel @Inject constructor(
 
 sealed interface TransactionDetailUiState {
     object Loading : TransactionDetailUiState
-    data class Success(val transaction: Transaction) : TransactionDetailUiState
+    data class Success(val item: com.budgetpace.app.core.model.TransactionWithCategory) : TransactionDetailUiState
     object Error : TransactionDetailUiState
 }
 
@@ -99,7 +106,7 @@ fun TransactionDetailRoute(
             }
             is TransactionDetailUiState.Success -> {
                 TransactionDetailScreen(
-                    transaction = state.transaction,
+                    item = state.item,
                     modifier = Modifier.padding(innerPadding)
                 )
             }
@@ -110,9 +117,12 @@ fun TransactionDetailRoute(
 
 @Composable
 fun TransactionDetailScreen(
-    transaction: Transaction,
+    item: com.budgetpace.app.core.model.TransactionWithCategory,
     modifier: Modifier = Modifier
 ) {
+    val transaction = item.transaction
+    val category = item.category
+    
     val isCredit = transaction.direction == TransactionDirection.CREDIT
     val iconColor = if (isCredit) Color(0xFF2E7D32).copy(alpha = 0.2f) else Color(0xFFF29C38).copy(alpha = 0.2f)
     val iconTint = if (isCredit) Color(0xFF4CAF50) else Color(0xFFF29C38)
@@ -160,7 +170,7 @@ fun TransactionDetailScreen(
         
         // Details Grid
         DetailRow("Date & Time", timeString)
-        DetailRow("Payee", transaction.recipient ?: transaction.sender ?: "Paytm UPI")
+        DetailRow("Payee", transaction.recipient ?: transaction.sender ?: category?.name ?: "Paytm UPI")
         DetailRow("UPI Ref", transaction.referenceNumber ?: "621859049153")
         
         // Category with dot
@@ -171,7 +181,7 @@ fun TransactionDetailScreen(
         ) {
             Text("Category", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Miscellaneous", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                Text(category?.name ?: "Miscellaneous", style = MaterialTheme.typography.bodyLarge, color = Color.White)
                 Spacer(modifier = Modifier.width(6.dp))
                 Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFFF9800)))
             }

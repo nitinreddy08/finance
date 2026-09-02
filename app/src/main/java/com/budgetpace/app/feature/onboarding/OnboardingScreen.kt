@@ -44,6 +44,14 @@ fun OnboardingRoute(
         when (step) {
             0 -> {
                 // Welcome
+                val signInState by viewModel.signInState.collectAsState()
+                
+                LaunchedEffect(signInState) {
+                    if (signInState == true) {
+                        step = 1
+                    }
+                }
+                
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp),
                     verticalArrangement = Arrangement.Center,
@@ -64,12 +72,16 @@ fun OnboardingRoute(
                     )
                     Spacer(modifier = Modifier.height(64.dp))
                     Button(
-                        onClick = { step = 1 },
+                        onClick = { viewModel.signInWithGoogle(context) },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Get Started", style = MaterialTheme.typography.titleMedium)
+                        Text("Continue with Google", style = MaterialTheme.typography.titleMedium)
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    TextButton(onClick = { step = 1 }) {
+                        Text("Skip for now", color = Color.Gray)
                     }
                 }
             }

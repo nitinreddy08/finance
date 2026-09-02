@@ -18,9 +18,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import androidx.compose.ui.platform.LocalContext
+import androidx.hilt.navigation.compose.hiltViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsRoute(
+    viewModel: SettingsViewModel = hiltViewModel(),
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -40,12 +44,13 @@ fun SettingsRoute(
         },
         containerColor = Color(0xFF15161A)
     ) { innerPadding ->
-        SettingsScreen(modifier = Modifier.padding(innerPadding))
+        SettingsScreen(viewModel = viewModel, modifier = Modifier.padding(innerPadding))
     }
 }
 
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 100.dp) // Space for bottom nav
@@ -78,7 +83,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         item {
             SettingsSectionHeader("ACCOUNT")
             SettingsMockupItem(icon = "G", title = "Google Account", subtitle = "Connected")
-            SettingsMockupItem(icon = "☁", title = "Daily Backup to Google Sheets", subtitle = "On")
+            SettingsMockupItem(
+                icon = "☁", 
+                title = "Daily Backup to Google Sheets", 
+                subtitle = "On", 
+                onClick = { viewModel.toggleDailyBackup(context, true) }
+            )
             SettingsMockupItem(icon = "📊", title = "Sheet", subtitle = "My Budget - Nilesh")
         }
         
@@ -104,12 +114,13 @@ fun SettingsSectionHeader(title: String) {
 fun SettingsMockupItem(
     icon: String,
     title: String,
-    subtitle: String
+    subtitle: String,
+    onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { }
+            .clickable(onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically

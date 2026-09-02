@@ -18,6 +18,18 @@ class TransactionRepositoryImpl(
         }
     }
 
+    override fun observeWithCategoryByMonth(monthId: String): Flow<List<TransactionWithCategory>> {
+        return transactionDao.observeWithCategoryByMonth(monthId).map { list ->
+            list.map { TransactionWithCategory(it.transaction.toDomain(), it.category?.toDomain()) }
+        }
+    }
+    
+    override fun observeWithCategoryById(id: String): Flow<TransactionWithCategory?> {
+        return transactionDao.observeWithCategoryById(id).map { entity ->
+            entity?.let { TransactionWithCategory(it.transaction.toDomain(), it.category?.toDomain()) }
+        }
+    }
+
     override suspend fun add(transaction: Transaction) {
         transactionDao.insert(transaction.toEntity())
     }
