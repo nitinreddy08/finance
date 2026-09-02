@@ -16,6 +16,23 @@ if (localPropertiesFile.exists()) {
 }
 val googleClientId = localProperties.getProperty("GOOGLE_CLIENT_ID") ?: "\"YOUR_WEB_CLIENT_ID_HERE\""
 
+// Personal/sideloading release signing — NOT suitable for Play Store distribution.
+// Generate with (see README/SIGNING.md for the full command):
+//   keytool -genkeypair -v -keystore release.keystore -alias budgetpace -keyalg RSA \
+//     -keysize 2048 -validity 10000
+// then add to local.properties (which is gitignored, same as GOOGLE_CLIENT_ID):
+//   RELEASE_STORE_FILE=../release.keystore
+//   RELEASE_STORE_PASSWORD=...
+//   RELEASE_KEY_ALIAS=budgetpace
+//   RELEASE_KEY_PASSWORD=...
+// Until those are set, `release` builds fall back to being unsigned, same as before.
+val releaseStoreFile = localProperties.getProperty("RELEASE_STORE_FILE")
+val releaseStorePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+val releaseKeyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+val hasReleaseSigningConfig = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+    .all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.budgetpace.app"
     compileSdk = 35
@@ -31,10 +48,26 @@ android {
         buildConfigField("String", "GOOGLE_CLIENT_ID", googleClientId)
     }
 
+    signingConfigs {
+        if (hasReleaseSigningConfig) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true
-            applicationIdSuffix = ".debug"
+            // No applicationIdSuffix: Google Sign-In and the Sheets/Drive Authorization API
+            // validate the calling app's package name (+ signing SHA-1) against the OAuth
+            // client registered in Google Cloud Console. A ".debug"-suffixed package here would
+            // silently mismatch whatever package was actually registered there, breaking both
+            // flows with an opaque error — keep debug and release on the exact same package name
+            // so only the SHA-1 differs between them.
         }
         release {
             isMinifyEnabled = true
@@ -42,6 +75,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
