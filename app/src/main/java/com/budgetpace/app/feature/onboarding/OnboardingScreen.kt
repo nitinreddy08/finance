@@ -44,11 +44,6 @@ fun OnboardingRoute(
     var categories by remember { mutableStateOf(listOf<CategoryEntry>()) }
 
     val context = LocalContext.current
-    val onboardingComplete by viewModel.onboardingComplete.collectAsState()
-
-    LaunchedEffect(onboardingComplete) {
-        if (onboardingComplete) onComplete()
-    }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF15161A)) {
         when (step) {
