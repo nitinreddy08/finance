@@ -97,6 +97,8 @@ dependencies {
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
+    // Bridges Play Services Task<T> (used by the Google Authorization API) to suspend fun/.await()
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 
     // Hilt
     implementation(libs.hilt.android)
@@ -128,6 +130,9 @@ dependencies {
     implementation("androidx.credentials:credentials:1.3.0-rc01")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0-rc01")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    // Authorization API: requests the drive.file/Sheets scope as a step separate from
+    // Credential Manager sign-in, per spec §7.
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
 }
 
 dependencies {
@@ -135,4 +140,6 @@ dependencies {
     implementation("com.google.apis:google-api-services-sheets:v4-rev20230815-2.0.0") {
         exclude(group = "org.apache.httpcomponents")
     }
+    // Explicit: don't rely on google-api-client's transitive JSON factory resolution for GsonFactory.
+    implementation("com.google.http-client:google-http-client-gson:1.44.1")
 }

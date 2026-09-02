@@ -1,6 +1,9 @@
 package com.budgetpace.app.feature.settings
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -27,6 +30,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.text.DateFormat
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +65,16 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
     val context = LocalContext.current
     val session by viewModel.session.collectAsStateWithLifecycle()
     val exportState by viewModel.exportState.collectAsStateWithLifecycle()
+    val isSheetsAuthorized by viewModel.isSheetsAuthorized.collectAsStateWithLifecycle()
+    val sheetsSyncState by viewModel.sheetsSyncState.collectAsStateWithLifecycle()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsStateWithLifecycle()
     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    val authorizationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        viewModel.handleAuthorizationResult(result.data)
+    }
 
     LaunchedEffect(exportState) {
         when (val state = exportState) {
@@ -72,6 +86,22 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
                 // Spec §61: never expose raw technical errors to the user.
                 Toast.makeText(context, "Couldn't export CSV. Your local data is safe.", Toast.LENGTH_LONG).show()
                 viewModel.consumeExportState()
+            }
+            else -> Unit
+        }
+    }
+
+    LaunchedEffect(sheetsSyncState) {
+        when (val state = sheetsSyncState) {
+            is SheetsSyncState.Success -> {
+                val message = if (state.syncedCount == 0) "Already up to date" else "Synced ${state.syncedCount} transaction(s)"
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                viewModel.consumeSheetsSyncState()
+            }
+            is SheetsSyncState.Error -> {
+                // Spec §61: never expose raw technical errors to the user.
+                Toast.makeText(context, "Couldn't sync with Google Sheets. Your local data is safe.", Toast.LENGTH_LONG).show()
+                viewModel.consumeSheetsSyncState()
             }
             else -> Unit
         }
@@ -138,12 +168,44 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
         item {
             SettingsSectionHeader("ACCOUNT")
             SettingsMockupItem(icon = "G", title = "Google Account", subtitle = if (session != null) "Connected" else "Not connected")
-            SettingsMockupItem(
-                icon = "☁",
-                title = "Daily Backup to Google Sheets",
-                subtitle = "On",
-                onClick = { viewModel.toggleDailyBackup(context, true) }
-            )
+        }
+
+        item {
+            SettingsSectionHeader("GOOGLE SHEETS")
+            if (!isSheetsAuthorized) {
+                SettingsMockupItem(
+                    icon = "☁",
+                    title = "Connect Google Sheets",
+                    subtitle = "Not connected",
+                    onClick = {
+                        viewModel.beginSheetsAuthorization { pendingIntent ->
+                            authorizationLauncher.launch(
+                                IntentSenderRequest.Builder(pendingIntent.intentSender).build()
+                            )
+                        }
+                    }
+                )
+            } else {
+                SettingsMockupItem(icon = "☁", title = "Google Sheets", subtitle = "Connected")
+                SettingsMockupItem(
+                    icon = "🔁",
+                    title = "Daily backup",
+                    subtitle = "On",
+                    onClick = { viewModel.toggleDailyBackup(context, true) }
+                )
+                val lastSync = remember(sheetsSyncState) { viewModel.lastSyncAtMillis() }
+                SettingsMockupItem(
+                    icon = "🕒",
+                    title = "Last backup",
+                    subtitle = lastSync?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) } ?: "Never"
+                )
+                SettingsMockupItem(
+                    icon = "⬆",
+                    title = if (sheetsSyncState == SheetsSyncState.Syncing) "Syncing…" else "Sync now",
+                    subtitle = if (pendingSyncCount > 0) "$pendingSyncCount change${if (pendingSyncCount == 1) "" else "s"} waiting" else "Up to date",
+                    onClick = { if (sheetsSyncState != SheetsSyncState.Syncing) viewModel.syncNow() }
+                )
+            }
         }
 
         item {

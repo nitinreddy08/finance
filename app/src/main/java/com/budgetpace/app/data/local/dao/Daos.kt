@@ -119,6 +119,9 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE syncState = 'PENDING'")
     suspend fun getPending(): List<TransactionEntity>
 
+    @Query("SELECT COUNT(*) FROM transactions WHERE syncState = 'PENDING'")
+    fun observePendingCount(): Flow<Int>
+
     @Query("""
         SELECT * FROM transactions
         WHERE bank = :bank AND referenceNumber = :referenceNumber
