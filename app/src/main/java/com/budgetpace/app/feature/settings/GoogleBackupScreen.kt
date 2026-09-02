@@ -93,7 +93,17 @@ fun GoogleBackupRoute(
             )
 
             SettingsSectionHeader("GOOGLE SHEETS")
-            if (!isSheetsAuthorized) {
+            if (session == null) {
+                // Sign in first — Sheets authorization ties itself to whichever account is
+                // signed in, rather than showing its own independent account picker that could
+                // end up connecting a different Google account than the one you're using.
+                SettingsMockupItem(
+                    icon = "☁",
+                    title = "Sign in with Google first",
+                    subtitle = "Required to connect Sheets",
+                    onClick = { viewModel.signInWithGoogle(context) },
+                )
+            } else if (!isSheetsAuthorized) {
                 SettingsMockupItem(
                     icon = "☁",
                     title = "Connect Google Sheets",

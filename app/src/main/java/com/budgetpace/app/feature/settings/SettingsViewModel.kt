@@ -108,13 +108,16 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Kicks off Drive/Sheets authorization (spec §7 — a step separate from sign-in).
+     * Kicks off Drive/Sheets authorization (spec §7 — a step separate from sign-in). Ties the
+     * request to the already-signed-in account (when there is one) so this doesn't present its
+     * own independent account picker that could end up authorizing a different Google account
+     * than the one the user is signed in with.
      * If consent UI is needed, [onNeedsConsent] receives the IntentSenderRequest to launch;
      * the caller must feed the ActivityResult's data Intent back into [handleAuthorizationResult].
      */
     fun beginSheetsAuthorization(onNeedsConsent: (android.app.PendingIntent) -> Unit) {
         viewModelScope.launch {
-            when (val outcome = authorizationManager.requestAuthorization()) {
+            when (val outcome = authorizationManager.requestAuthorization(session.value?.email)) {
                 is AuthorizationOutcome.NeedsConsent -> onNeedsConsent(outcome.pendingIntent)
                 is AuthorizationOutcome.Authorized -> Unit // isSheetsAuthorized flow updates itself
                 is AuthorizationOutcome.Failed -> _sheetsSyncState.value = SheetsSyncState.Error(outcome.message)

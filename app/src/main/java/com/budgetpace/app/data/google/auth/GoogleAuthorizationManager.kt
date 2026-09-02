@@ -1,5 +1,6 @@
 package com.budgetpace.app.data.google.auth
 
+import android.accounts.Account
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -63,9 +64,9 @@ class GoogleAuthorizationManager @Inject constructor(
     /** Call once at app startup. If consent was granted in a previous session, attempts a silent
      * refresh via [requestAuthorization] — per its own doc comment, that resolves with a fresh
      * token and no UI when consent already exists. Does nothing if never authorized before. */
-    suspend fun restoreIfNeeded() {
+    suspend fun restoreIfNeeded(accountEmail: String? = null) {
         if (prefs.getBoolean(KEY_WAS_AUTHORIZED, false)) {
-            requestAuthorization()
+            requestAuthorization(accountEmail)
         }
     }
 
@@ -77,11 +78,18 @@ class GoogleAuthorizationManager @Inject constructor(
      * whose PendingIntent the caller must launch via
      * ActivityResultContracts.StartIntentSenderForResult and feed the result back into
      * [handleAuthorizationResult].
+     *
+     * [accountEmail], when known (the already-signed-in Google account), ties this request to
+     * that exact account so the consent screen doesn't offer an independent account picker that
+     * could end up authorizing a *different* Google account than the one signed in with.
      */
-    suspend fun requestAuthorization(): AuthorizationOutcome {
-        val request = AuthorizationRequest.builder()
+    suspend fun requestAuthorization(accountEmail: String? = null): AuthorizationOutcome {
+        val requestBuilder = AuthorizationRequest.builder()
             .setRequestedScopes(REQUESTED_SCOPES)
-            .build()
+        if (!accountEmail.isNullOrBlank()) {
+            requestBuilder.setAccount(Account(accountEmail, "com.google"))
+        }
+        val request = requestBuilder.build()
         return try {
             val result = Identity.getAuthorizationClient(context).authorize(request).await()
             if (result.hasResolution()) {

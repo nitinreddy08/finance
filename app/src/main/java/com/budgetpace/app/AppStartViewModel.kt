@@ -49,8 +49,10 @@ class AppStartViewModel @Inject constructor(
 
         // A restored session/authorization only carries identity, not a live token — refresh
         // both silently so the UI doesn't wrongly show "not connected" after every restart even
-        // though Google-side consent from a previous session is still valid.
+        // though Google-side consent from a previous session is still valid. The restored
+        // session's email (if any) is already available synchronously, so authorization can tie
+        // itself to that same account without waiting on the (idToken-only) session refresh.
         viewModelScope.launch { authRepository.refreshSessionSilently() }
-        viewModelScope.launch { authorizationManager.restoreIfNeeded() }
+        viewModelScope.launch { authorizationManager.restoreIfNeeded(authRepository.currentSession.value?.email) }
     }
 }

@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import com.budgetpace.app.data.google.auth.AuthorizationOutcome
 import com.budgetpace.app.data.google.auth.GoogleAuthorizationManager
 import com.budgetpace.app.data.google.sheets.GoogleSheetsRepository
+import com.budgetpace.app.domain.auth.AuthRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -22,12 +23,15 @@ class GoogleSheetsSyncWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val authorizationManager: GoogleAuthorizationManager,
     private val sheetsRepository: GoogleSheetsRepository,
+    private val authRepository: AuthRepository,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
         // requestAuthorization() also serves as a silent token refresh when consent was already
-        // granted; only a real NeedsConsent/Failed outcome here means the user must act.
-        when (val outcome = authorizationManager.requestAuthorization()) {
+        // granted; only a real NeedsConsent/Failed outcome here means the user must act. Tied to
+        // the signed-in account so a background refresh can't drift onto a different one.
+        val signedInEmail = authRepository.currentSession.value?.email
+        when (val outcome = authorizationManager.requestAuthorization(signedInEmail)) {
             is AuthorizationOutcome.Authorized -> Unit
             is AuthorizationOutcome.NeedsConsent -> {
                 Log.w("GoogleSheetsSyncWorker", "Google Sheets needs re-authorization; open Settings")
