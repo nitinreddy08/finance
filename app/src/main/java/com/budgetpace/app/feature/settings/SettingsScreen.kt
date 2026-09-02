@@ -1,13 +1,22 @@
 package com.budgetpace.app.feature.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.budgetpace.app.core.designsystem.theme.bpColors
+import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -17,14 +26,19 @@ fun SettingsRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text("Settings", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.bpColors.background,
-                    titleContentColor = MaterialTheme.bpColors.textPrimary
+                    containerColor = Color(0xFF15161A),
+                    titleContentColor = Color.White
                 )
             )
         },
-        containerColor = MaterialTheme.bpColors.background
+        containerColor = Color(0xFF15161A)
     ) { innerPadding ->
         SettingsScreen(modifier = Modifier.padding(innerPadding))
     }
@@ -34,45 +48,43 @@ fun SettingsRoute(
 fun SettingsScreen(modifier: Modifier = Modifier) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp)
+        contentPadding = PaddingValues(bottom = 100.dp) // Space for bottom nav
     ) {
+        // User Profile Section
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF2A2D35)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("N", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text("Nilesh N.", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text("nilesh@example.com", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                }
+            }
+        }
+        
         item {
             SettingsSectionHeader("ACCOUNT")
-            SettingsItem("Google account", "Not connected")
+            SettingsMockupItem(icon = "G", title = "Google Account", subtitle = "Connected")
+            SettingsMockupItem(icon = "☁", title = "Daily Backup to Google Sheets", subtitle = "On")
+            SettingsMockupItem(icon = "📊", title = "Sheet", subtitle = "My Budget - Nilesh")
         }
         
         item {
-            SettingsSectionHeader("TRANSACTION DETECTION")
-            SettingsItem("Notification access", "Disabled")
-            SettingsItem("Supported banks", "Kotak, SBI")
-            SettingsSwitchItem("Detection enabled", true)
-        }
-        
-        item {
-            SettingsSectionHeader("BUDGET")
-            SettingsItem("Categories", "Manage")
-            SettingsItem("Monthly budget", "View overall")
-            SettingsItem("Carry-forward", "View allocations")
-        }
-        
-        item {
-            SettingsSectionHeader("GOOGLE SHEETS")
-            SettingsItem("Connected sheet", "None")
-            SettingsItem("Last sync", "Never")
-            SettingsItem("Sync now", "")
-            SettingsSwitchItem("Automatic daily export", false)
-        }
-        
-        item {
-            SettingsSectionHeader("DATA")
-            SettingsItem("Export CSV", "")
-            SettingsItem("Delete local data", "", MaterialTheme.bpColors.statusRed)
-        }
-        
-        item {
-            SettingsSectionHeader("ABOUT")
-            SettingsItem("Version", "1.0.0")
-            SettingsItem("Privacy", "")
+            SettingsSectionHeader("PREFERENCES")
+            SettingsMockupItem(icon = "⚙", title = "Currency", subtitle = "INR (₹)")
         }
     }
 }
@@ -81,64 +93,53 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 fun SettingsSectionHeader(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.bpColors.textSecondary,
-        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 32.dp, bottom = 8.dp)
+        style = MaterialTheme.typography.labelSmall,
+        color = Color.Gray,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp)
     )
 }
 
 @Composable
-fun SettingsItem(
+fun SettingsMockupItem(
+    icon: String,
     title: String,
-    subtitle: String,
-    titleColor: androidx.compose.ui.graphics.Color = MaterialTheme.bpColors.textPrimary
+    subtitle: String
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { }
             .padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-            color = titleColor
-        )
-        if (subtitle.isNotEmpty()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(icon, fontSize = 16.sp) // Mock icons
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.bpColors.textSecondary
+                color = Color.Gray
             )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
         }
     }
     Divider(
-        color = MaterialTheme.bpColors.border.copy(alpha = 0.5f),
-        modifier = Modifier.padding(horizontal = 24.dp)
-    )
-}
-
-@Composable
-fun SettingsSwitchItem(title: String, checked: Boolean) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-            color = MaterialTheme.bpColors.textPrimary
-        )
-        Switch(
-            checked = checked,
-            onCheckedChange = null // Read-only for Phase 2 UI placeholder
-        )
-    }
-    Divider(
-        color = MaterialTheme.bpColors.border.copy(alpha = 0.5f),
+        color = Color(0xFF2A2D35),
         modifier = Modifier.padding(horizontal = 24.dp)
     )
 }

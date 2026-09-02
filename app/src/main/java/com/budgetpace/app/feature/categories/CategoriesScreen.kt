@@ -1,37 +1,46 @@
 package com.budgetpace.app.feature.categories
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import com.budgetpace.app.core.designsystem.theme.bpColors
-import com.budgetpace.app.core.model.Category
+import com.budgetpace.app.core.model.CategorySummary
 import com.budgetpace.app.core.money.Money
-import com.budgetpace.app.data.local.dao.CategoryDao
-import com.budgetpace.app.data.local.mapper.toDomain
+import com.budgetpace.app.domain.repository.BudgetRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
 class CategoriesViewModel @Inject constructor(
-    categoryDao: CategoryDao
+    budgetRepository: BudgetRepository
 ) : ViewModel() {
-
+    
     // Passing empty string for phase testing
-    val uiState: StateFlow<CategoriesUiState> = categoryDao.observeByMonth("")
-        .map { list -> CategoriesUiState.Success(list.map { it.toDomain() }) }
+    val uiState: StateFlow<CategoriesUiState> = budgetRepository.observeMonthSummary(UUID.randomUUID().toString())
+        .map { summary -> CategoriesUiState.Success(summary.categories) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -41,7 +50,7 @@ class CategoriesViewModel @Inject constructor(
 
 sealed interface CategoriesUiState {
     object Loading : CategoriesUiState
-    data class Success(val categories: List<Category>) : CategoriesUiState
+    data class Success(val categories: List<CategorySummary>) : CategoriesUiState
     object Error : CategoriesUiState
 }
 
@@ -57,28 +66,29 @@ fun CategoriesRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Categories") },
+                title = { Text("Categories", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { /* Add category */ }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add", tint = Color.White)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.bpColors.background,
-                    titleContentColor = MaterialTheme.bpColors.textPrimary
+                    containerColor = Color(0xFF15161A),
+                    titleContentColor = Color.White
                 )
             )
         },
-        containerColor = MaterialTheme.bpColors.background,
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { /* Add category */ },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Text("+")
-            }
-        }
+        containerColor = Color(0xFF15161A)
     ) { innerPadding ->
         when (val state = uiState) {
             is CategoriesUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                    CircularProgressIndicator(modifier = Modifier.align(androidx.compose.ui.Alignment.Center))
+                Box(modifier = Modifier.fillMaxSize().padding(innerPadding).background(Color(0xFF15161A)), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF4CAF50))
                 }
             }
             is CategoriesUiState.Success -> {
@@ -88,68 +98,89 @@ fun CategoriesRoute(
                     onCategoryClick = onCategoryClick
                 )
             }
-            is CategoriesUiState.Error -> {}
+            is CategoriesUiState.Error -> {
+                Box(modifier = Modifier.fillMaxSize().padding(innerPadding).background(Color(0xFF15161A)), contentAlignment = Alignment.Center) {
+                    Text("Error loading categories", color = Color.White)
+                }
+            }
         }
     }
 }
 
 @Composable
 fun CategoriesList(
-    categories: List<Category>,
+    categories: List<CategorySummary>,
     modifier: Modifier = Modifier,
     onCategoryClick: (String) -> Unit
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp) // Space for bottom nav
     ) {
         items(categories) { category ->
-            CategoryCard(
-                category = category,
-                onClick = { onCategoryClick(category.id.toString()) }
+            CategoryMockupRow(
+                summary = category,
+                onClick = { onCategoryClick(category.category.id.toString()) }
             )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CategoryCard(
-    category: Category,
+fun CategoryMockupRow(
+    summary: CategorySummary,
     onClick: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.bpColors.surface),
-        shape = MaterialTheme.shapes.large,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.bpColors.border)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = category.name,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.bpColors.textPrimary
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (category.weeklyPacingEnabled) "4 Periods" else "Monthly",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.bpColors.textSecondary
-                )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            // Icon Placeholder
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2E7D32).copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🛒", fontSize = 18.sp)
             }
-            
+            Spacer(modifier = Modifier.width(16.dp))
             Text(
-                text = Money.formatRupeesWhole(category.monthlyBudgetMinor),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.bpColors.textPrimary
+                text = summary.category.name,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = Color.White
+            )
+        }
+        
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = Money.formatRupeesWhole(summary.category.monthlyBudgetMinor),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = Money.formatRupeesWhole(summary.totalSpentMinor),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            val pct = if (summary.category.monthlyBudgetMinor > 0) 
+                (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor * 100).toInt() 
+            else 0
+            Text(
+                text = "$pct%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                modifier = Modifier.width(40.dp)
             )
         }
     }
+    Divider(color = Color(0xFF2A2D35))
 }

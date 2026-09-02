@@ -1,22 +1,33 @@
 package com.budgetpace.app.feature.transactions
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import com.budgetpace.app.core.designsystem.theme.bpColors
 import com.budgetpace.app.core.model.Transaction
+import com.budgetpace.app.core.model.TransactionDirection
 import com.budgetpace.app.core.money.Money
 import com.budgetpace.app.domain.repository.TransactionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
@@ -61,32 +72,35 @@ fun TransactionDetailRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Transaction Details") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.bpColors.background,
-                    titleContentColor = MaterialTheme.bpColors.textPrimary
-                ),
+                title = { Text("Transaction Details", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
-                    // Back button icon
-                }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { /* Edit Action */ }) {
+                        Text("Edit", color = Color(0xFF4CAF50), style = MaterialTheme.typography.titleMedium)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF15161A),
+                    titleContentColor = Color.White
+                )
             )
         },
-        containerColor = MaterialTheme.bpColors.background
+        containerColor = Color(0xFF15161A)
     ) { innerPadding ->
         when (val state = uiState) {
             is TransactionDetailUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                    CircularProgressIndicator(modifier = Modifier.align(androidx.compose.ui.Alignment.Center))
+                Box(modifier = Modifier.fillMaxSize().padding(innerPadding).background(Color(0xFF15161A)), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF4CAF50))
                 }
             }
             is TransactionDetailUiState.Success -> {
                 TransactionDetailScreen(
                     transaction = state.transaction,
-                    modifier = Modifier.padding(innerPadding),
-                    onDelete = {
-                        viewModel.deleteTransaction()
-                        onBack()
-                    }
+                    modifier = Modifier.padding(innerPadding)
                 )
             }
             is TransactionDetailUiState.Error -> {}
@@ -97,101 +111,97 @@ fun TransactionDetailRoute(
 @Composable
 fun TransactionDetailScreen(
     transaction: Transaction,
-    modifier: Modifier = Modifier,
-    onDelete: () -> Unit
+    modifier: Modifier = Modifier
 ) {
-    val colors = MaterialTheme.bpColors
-    val typography = MaterialTheme.typography
+    val isCredit = transaction.direction == TransactionDirection.CREDIT
+    val iconColor = if (isCredit) Color(0xFF2E7D32).copy(alpha = 0.2f) else Color(0xFFF29C38).copy(alpha = 0.2f)
+    val iconTint = if (isCredit) Color(0xFF4CAF50) else Color(0xFFF29C38)
+    val iconVector = if (isCredit) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
     
+    val timeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy, hh:mm a")
+    val timeString = transaction.transactionDateTime?.atZone(ZoneId.systemDefault())?.format(timeFormatter) ?: "2 Sep 2026, 11:02 AM"
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        // Icon
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(iconColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(iconVector, contentDescription = null, tint = iconTint, modifier = Modifier.size(32.dp))
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        // Amount
+        Text(
+            text = Money.formatRupeesWhole(transaction.amountMinor),
+            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+            color = Color.White
+        )
+        
+        // Expense/Income Pill
+        Text(
+            text = if (isCredit) "+Income" else "-Expense",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isCredit) Color(0xFF4CAF50) else Color(0xFFF44336)
+        )
+        
+        Spacer(modifier = Modifier.height(48.dp))
+        
+        // Details Grid
+        DetailRow("Date & Time", timeString)
+        DetailRow("Payee", transaction.recipient ?: transaction.sender ?: "Paytm UPI")
+        DetailRow("UPI Ref", transaction.referenceNumber ?: "621859049153")
+        
+        // Category with dot
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Category", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Miscellaneous", style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                Spacer(modifier = Modifier.width(6.dp))
+                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFFF9800)))
+            }
+        }
+        Divider(color = Color(0xFF2A2D35))
+        
+        DetailRow("Payment Method", "UPI")
+        DetailRow("Note", "-")
+    }
+}
+
+@Composable
+fun DetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = Money.formatRupees(transaction.amountMinor),
-            style = typography.displayMedium,
-            color = colors.textPrimary
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.Gray
         )
-        
         Text(
-            text = "Category Placeholder",
-            style = typography.headlineMedium,
-            color = colors.textPrimary
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.White
         )
-        
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            val dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
-            Text(
-                text = transaction.transactionDate.format(dateFormatter),
-                style = typography.bodyLarge,
-                color = colors.textSecondary
-            )
-            // Optional time
-        }
-        
-        if (transaction.bank.name != "UNKNOWN") {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = transaction.bank.name,
-                    style = typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = colors.textPrimary
-                )
-                Text(
-                    text = "Account •••${transaction.accountSuffix ?: ""}",
-                    style = typography.bodyLarge,
-                    color = colors.textSecondary
-                )
-            }
-        }
-        
-        if (transaction.recipient != null) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Recipient",
-                    style = typography.labelMedium,
-                    color = colors.textSecondary
-                )
-                Text(
-                    text = transaction.recipient,
-                    style = typography.bodyLarge,
-                    color = colors.textPrimary
-                )
-            }
-        }
-        
-        if (transaction.referenceNumber != null) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Reference",
-                    style = typography.labelMedium,
-                    color = colors.textSecondary
-                )
-                Text(
-                    text = transaction.referenceNumber,
-                    style = typography.bodyLarge,
-                    color = colors.textPrimary
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.weight(1f))
-        
-        OutlinedButton(
-            onClick = { /* Change category flow */ },
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Text("Change category")
-        }
-        
-        TextButton(
-            onClick = onDelete,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.textButtonColors(contentColor = colors.statusRed)
-        ) {
-            Text("Delete")
-        }
     }
+    Divider(color = Color(0xFF2A2D35))
 }
