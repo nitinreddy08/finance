@@ -115,11 +115,11 @@ fun CategoryDetailRoute(
             title = "Edit category",
             initialName = summary.category.name,
             initialBudget = (summary.category.monthlyBudgetMinor / 100).toString(),
-            initialWeeklyPacing = summary.category.weeklyPacingEnabled,
+            initialPeriodCount = summary.category.periodCount,
             initialIconKey = summary.category.iconKey.ifBlank { com.budgetpace.app.core.designsystem.components.CATEGORY_EMOJI_CHOICES.first() },
             onDismiss = { showEditDialog = false },
-            onConfirm = { name, budgetMinor, weeklyPacing, iconKey ->
-                viewModel.updateCategory(categoryId, name, budgetMinor, weeklyPacing, iconKey)
+            onConfirm = { name, budgetMinor, periodCount, iconKey ->
+                viewModel.updateCategory(categoryId, name, budgetMinor, periodCount, iconKey)
                 showEditDialog = false
             }
         )
@@ -160,7 +160,7 @@ private fun CategoryDetailBody(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = if (summary.category.weeklyPacingEnabled) "4 periods" else "Start of month",
+                    text = if (summary.category.periodCount <= 1) "Start of month" else "${summary.category.periodCount} periods",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -180,7 +180,7 @@ private fun CategoryDetailBody(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        if (summary.category.weeklyPacingEnabled) {
+        if (summary.category.periodCount > 1) {
             Text(
                 text = "PERIODS",
                 style = MaterialTheme.typography.labelSmall,

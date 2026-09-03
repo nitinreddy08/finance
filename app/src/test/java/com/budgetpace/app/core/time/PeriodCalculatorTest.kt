@@ -56,14 +56,58 @@ class PeriodCalculatorTest {
 
     @Test
     fun testBudgetSplitExactSum() {
-        val periods = PeriodCalculator.periodsFor(2026, 9) // 30 days
-        
         // Budget ₹1000.00 -> 100,000 paise
         val monthlyBudgetMinor = 100_000L
-        
-        val splitBudgets = PeriodCalculator.splitBudget(monthlyBudgetMinor, periods)
-        
+
+        val splitBudgets = PeriodCalculator.splitBudget(monthlyBudgetMinor, 4)
+
         val totalSplit = splitBudgets.sum()
         assertEquals(monthlyBudgetMinor, totalSplit)
+    }
+
+    @Test
+    fun testBudgetSplitIsEqualNotProportionalToDays() {
+        // The split is purely by period count, independent of how many days each period spans —
+        // a category that says "spread across 4 periods" should see 4 equal amounts, not amounts
+        // weighted by each period's day count (an earlier version of this function did the
+        // latter, e.g. ₹1500 over Sept 2026's 8/7/8/7-day periods came out ₹400/₹350/₹400/₹350
+        // instead of ₹375 each).
+        val split = PeriodCalculator.splitBudget(1500_00L, 4)
+        assertEquals(4, split.size)
+        assertEquals(375_00L, split[0])
+        assertEquals(375_00L, split[1])
+        assertEquals(375_00L, split[2])
+        assertEquals(375_00L, split[3])
+    }
+
+    @Test
+    fun testBudgetSplitRemainderSpreadAcrossFirstPeriods() {
+        // 1000 / 3 = 333 remainder 1 -> the first period absorbs the one extra paisa rather than
+        // the last, so no single period is a visible outlier.
+        val split = PeriodCalculator.splitBudget(1000L, 3)
+        assertEquals(334L, split[0])
+        assertEquals(333L, split[1])
+        assertEquals(333L, split[2])
+        assertEquals(1000L, split.sum())
+    }
+
+    @Test
+    fun testDynamicPeriodCounts() {
+        // A category can choose any period count, not just a fixed 4 — 2 and 3 periods should
+        // divide the month's days (and, separately, its budget) just as evenly as 4 does.
+        val twoPeriods = PeriodCalculator.periodsFor(2026, 9, periodCount = 2) // 30 days
+        assertEquals(2, twoPeriods.size)
+        assertEquals(15, twoPeriods[0].days)
+        assertEquals(15, twoPeriods[1].days)
+
+        val threePeriods = PeriodCalculator.periodsFor(2026, 9, periodCount = 3) // 30 days
+        assertEquals(3, threePeriods.size)
+        assertEquals(10, threePeriods[0].days)
+        assertEquals(10, threePeriods[1].days)
+        assertEquals(10, threePeriods[2].days)
+
+        val onePeriod = PeriodCalculator.periodsFor(2026, 9, periodCount = 1)
+        assertEquals(1, onePeriod.size)
+        assertEquals(30, onePeriod[0].days)
     }
 }

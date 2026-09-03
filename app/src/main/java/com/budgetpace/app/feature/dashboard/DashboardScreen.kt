@@ -189,13 +189,27 @@ fun DashboardScreen(
         )
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Four-segment pace bar — spec §5: color communicates status, no "Week"/status words.
+        // Four-segment pace bar — a continuous fill across the segments by how much of the
+        // TOTAL month's budget has been spent (e.g. 81% used fills into period 3/4, not just
+        // period 1), colored by the month's overall elapsed-time-adjusted pace status. Spec §5:
+        // color communicates status, no "Week"/status words.
+        val overallFraction = if (summary.totalBudgetMinor > 0)
+            (summary.totalSpentMinor.toFloat() / summary.totalBudgetMinor).coerceIn(0f, 1f)
+        else 0f
+        val overallColor = statusColor(summary.overallStatus)
+        val segmentCount = summary.overallPeriods.size.coerceAtLeast(1)
         Row(
             modifier = Modifier.fillMaxWidth().height(8.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             summary.overallPeriods.forEach { period ->
-                PaceSegment(period = period, modifier = Modifier.weight(1f).fillMaxHeight())
+                val cellFraction = (overallFraction * segmentCount - period.periodIndex).coerceIn(0f, 1f)
+                PaceSegment(
+                    period = period,
+                    fraction = cellFraction,
+                    color = overallColor,
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                )
             }
         }
 
@@ -230,8 +244,8 @@ fun DashboardScreen(
             // "Start of month" category is just a lump sum with nothing to pace, so it moves out
             // of this scroller into the plain "More categories" list below instead. This area
             // (not the summary above it) is the only part of Home that ever scrolls.
-            val pacingCategories = summary.categories.filter { it.category.weeklyPacingEnabled }
-            val lumpSumCategories = summary.categories.filterNot { it.category.weeklyPacingEnabled }
+            val pacingCategories = summary.categories.filter { it.category.periodCount > 1 }
+            val lumpSumCategories = summary.categories.filterNot { it.category.periodCount > 1 }
             val currentPeriodIndex = summary.overallPeriods.firstOrNull { it.isCurrentPeriod }?.periodIndex
 
             Column(
@@ -333,9 +347,7 @@ private fun statusColor(status: BudgetStatus): Color = when (status) {
 }
 
 @Composable
-private fun PaceSegment(period: PeriodSummary, modifier: Modifier = Modifier) {
-    val filled = if (period.periodStatus == PeriodStatus.UPCOMING || period.effectiveBudgetMinor <= 0) 0f
-    else (period.spentMinor.toFloat() / period.effectiveBudgetMinor).coerceIn(0f, 1f)
+private fun PaceSegment(period: PeriodSummary, fraction: Float, color: Color, modifier: Modifier = Modifier) {
     // The bar communicates status by color+fill alone visually (spec's minimal-wording rule) —
     // this is the screen-reader-only equivalent, not a visible label.
     val statusDescription = when (period.periodStatus) {
@@ -349,17 +361,18 @@ private fun PaceSegment(period: PeriodSummary, modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
             .semantics {
-                contentDescription = "Period ${period.periodIndex + 1}, $statusDescription, " +
-                    "${Money.formatRupeesWhole(period.spentMinor)} of ${Money.formatRupeesWhole(period.effectiveBudgetMinor)}"
+                contentDescription = "Period ${period.periodIndex + 1}, $statusDescription"
             }
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(filled)
-                .clip(RoundedCornerShape(4.dp))
-                .background(statusColor(period.paceStatus))
-        )
+        if (fraction > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(fraction)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(color)
+            )
+        }
     }
 }
 

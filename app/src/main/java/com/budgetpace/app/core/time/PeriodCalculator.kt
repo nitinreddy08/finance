@@ -4,20 +4,15 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /**
- * Splits a calendar month into 4 equal-width periods using actual days.
+ * Splits a calendar month into N equal-width periods using actual days.
  *
- * Per spec §26:
- *   28 days → 7 / 7 / 7 / 7
- *   30 days → 8 / 7 / 8 / 7
- *   31 days → 8 / 8 / 8 / 7
- *
- * The split is deterministic: base = daysInMonth / 4 (integer division),
- * remainder r = daysInMonth % 4 → first r periods each get one extra day.
+ * The split is deterministic: base = daysInMonth / n (integer division),
+ * remainder r = daysInMonth % n → first r periods each get one extra day.
  *
  * The sum of all period day counts ALWAYS equals daysInMonth.
  */
 data class MonthPeriod(
-    val periodIndex: Int,       // 0-based (0..3)
+    val periodIndex: Int,       // 0-based (0 until periodCount)
     val startDate: LocalDate,
     val endDate: LocalDate,     // inclusive
 ) {
@@ -27,34 +22,34 @@ data class MonthPeriod(
 
 object PeriodCalculator {
 
+    /** How many periods the overall month-level pace bar (independent of any one
+     * category's own period count) is always divided into. */
+    const val DEFAULT_PERIOD_COUNT = 4
+
     /**
-     * Returns the 4 MonthPeriods for a given [year] and [month] (1-based).
+     * Returns the [periodCount] MonthPeriods for a given [year] and [month] (1-based).
      */
-    fun periodsFor(year: Int, month: Int): List<MonthPeriod> {
+    fun periodsFor(year: Int, month: Int, periodCount: Int = DEFAULT_PERIOD_COUNT): List<MonthPeriod> {
         val ym = YearMonth.of(year, month)
         val daysInMonth = ym.lengthOfMonth()
-        return periodsForDays(year, month, daysInMonth)
+        return periodsForDays(year, month, daysInMonth, periodCount)
     }
 
     /**
-     * Returns the 4 MonthPeriods for a given [date]'s month.
+     * Returns the [periodCount] MonthPeriods for a given [date]'s month.
      */
-    fun periodsFor(date: LocalDate): List<MonthPeriod> =
-        periodsFor(date.year, date.monthValue)
+    fun periodsFor(date: LocalDate, periodCount: Int = DEFAULT_PERIOD_COUNT): List<MonthPeriod> =
+        periodsFor(date.year, date.monthValue, periodCount)
 
-    fun periodsForDays(year: Int, month: Int, daysInMonth: Int): List<MonthPeriod> {
+    fun periodsForDays(year: Int, month: Int, daysInMonth: Int, periodCount: Int = DEFAULT_PERIOD_COUNT): List<MonthPeriod> {
         // Deterministic even split via cumulative ceiling division:
-        //   cumulative(i) = ceil(daysInMonth * (i + 1) / 4)
+        //   cumulative(i) = ceil(daysInMonth * (i + 1) / periodCount)
         //   periodDays(i)  = cumulative(i) - cumulative(i - 1), cumulative(-1) = 0
-        // This reproduces the spec's §26 worked examples exactly:
-        //   28 days -> 7 / 7 / 7 / 7
-        //   30 days -> 8 / 7 / 8 / 7
-        //   31 days -> 8 / 8 / 8 / 7
         val periods = mutableListOf<MonthPeriod>()
         var dayOffset = 1
         var previousCumulative = 0
-        for (i in 0 until 4) {
-            val cumulative = ceilDiv(daysInMonth * (i + 1), 4)
+        for (i in 0 until periodCount) {
+            val cumulative = ceilDiv(daysInMonth * (i + 1), periodCount)
             val periodDays = cumulative - previousCumulative
             previousCumulative = cumulative
 
@@ -70,32 +65,24 @@ object PeriodCalculator {
         (numerator + denominator - 1) / denominator
 
     /**
-     * Returns which period index (0-based) the [date] falls into,
-     * or -1 if the date is outside the month.
+     * Returns which period index (0-based) the [date] falls into, for a month split into
+     * [periodCount] periods, or -1 if the date is outside the month.
      */
-    fun periodIndexFor(date: LocalDate): Int {
-        val periods = periodsFor(date)
+    fun periodIndexFor(date: LocalDate, periodCount: Int = DEFAULT_PERIOD_COUNT): Int {
+        val periods = periodsFor(date, periodCount)
         return periods.indexOfFirst { date in it }
     }
 
     /**
-     * Calculates period budgets so they sum exactly to [monthlyBudgetMinor].
-     *
-     * Per spec §27:
-     *   periodBudget = M × periodDays / daysInMonth   (integer paise)
-     *   Remainder distributed to earlier periods deterministically.
+     * Divides [monthlyBudgetMinor] equally across [periodCount] periods (paise). Any remainder
+     * from integer division is spread one-extra-unit-each across the first few periods, rather
+     * than dumped entirely on the last one, so no single period looks like an outlier.
      */
-    fun splitBudget(monthlyBudgetMinor: Long, periods: List<MonthPeriod>): LongArray {
-        val daysInMonth = periods.sumOf { it.days }
-        val result = LongArray(4)
-        var allocated = 0L
-        for (i in 0 until 3) {
-            val share = monthlyBudgetMinor * periods[i].days / daysInMonth
-            result[i] = share
-            allocated += share
-        }
-        result[3] = monthlyBudgetMinor - allocated   // last period absorbs any rounding remainder
-        return result
+    fun splitBudget(monthlyBudgetMinor: Long, periodCount: Int): LongArray {
+        if (periodCount <= 0) return LongArray(0)
+        val base = monthlyBudgetMinor / periodCount
+        val remainder = (monthlyBudgetMinor % periodCount).toInt()
+        return LongArray(periodCount) { i -> base + if (i < remainder) 1 else 0 }
     }
 }
 

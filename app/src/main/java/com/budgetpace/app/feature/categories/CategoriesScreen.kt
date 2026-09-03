@@ -5,8 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
@@ -70,7 +72,7 @@ class CategoriesViewModel @Inject constructor(
         )
 
     /** Spec §23: categories are fully user-defined; this is the only place new ones are created. */
-    fun addCategory(name: String, budgetMinor: Long, weeklyPacingEnabled: Boolean, iconKey: String) {
+    fun addCategory(name: String, budgetMinor: Long, periodCount: Int, iconKey: String) {
         if (name.isBlank() || budgetMinor <= 0) return
         viewModelScope.launch {
             val month = budgetMonthDao.getActiveMonth() ?: return@launch
@@ -82,7 +84,7 @@ class CategoriesViewModel @Inject constructor(
                     monthId = UUID.fromString(month.id),
                     name = name.trim(),
                     monthlyBudgetMinor = budgetMinor,
-                    weeklyPacingEnabled = weeklyPacingEnabled,
+                    periodCount = periodCount,
                     iconKey = iconKey,
                     sortOrder = sortOrder,
                     active = true,
@@ -93,7 +95,7 @@ class CategoriesViewModel @Inject constructor(
         }
     }
 
-    fun updateCategory(categoryId: String, name: String, budgetMinor: Long, weeklyPacingEnabled: Boolean, iconKey: String) {
+    fun updateCategory(categoryId: String, name: String, budgetMinor: Long, periodCount: Int, iconKey: String) {
         if (name.isBlank() || budgetMinor <= 0) return
         viewModelScope.launch {
             val existing = categoryDao.getById(categoryId) ?: return@launch
@@ -101,7 +103,7 @@ class CategoriesViewModel @Inject constructor(
                 existing.copy(
                     name = name.trim(),
                     monthlyBudgetMinor = budgetMinor,
-                    weeklyPacingEnabled = weeklyPacingEnabled,
+                    periodCount = periodCount,
                     iconKey = iconKey,
                     updatedAt = Instant.now().toEpochMilli(),
                 )
@@ -253,11 +255,11 @@ fun CategoriesRoute(
             title = "Add category",
             initialName = "",
             initialBudget = "",
-            initialWeeklyPacing = true,
+            initialPeriodCount = 4,
             initialIconKey = CATEGORY_EMOJI_CHOICES.first(),
             onDismiss = { showAddDialog = false },
-            onConfirm = { name, budgetMinor, weeklyPacing, iconKey ->
-                viewModel.addCategory(name, budgetMinor, weeklyPacing, iconKey)
+            onConfirm = { name, budgetMinor, periodCount, iconKey ->
+                viewModel.addCategory(name, budgetMinor, periodCount, iconKey)
                 showAddDialog = false
             }
         )
@@ -265,29 +267,29 @@ fun CategoriesRoute(
 
 }
 
+/** How many periods a category's budget can be spread across — 1 means the whole amount is
+ * available up front ("start of month"); anything higher divides it that many ways, equally. */
+private val PERIOD_COUNT_OPTIONS = listOf(1, 2, 3, 4)
+
 @Composable
 fun CategoryFormDialog(
     title: String,
     initialName: String,
     initialBudget: String,
-    initialWeeklyPacing: Boolean,
+    initialPeriodCount: Int,
     initialIconKey: String,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, budgetMinor: Long, weeklyPacing: Boolean, iconKey: String) -> Unit,
+    onConfirm: (name: String, budgetMinor: Long, periodCount: Int, iconKey: String) -> Unit,
 ) {
     var name by remember { mutableStateOf(initialName) }
     var budget by remember { mutableStateOf(initialBudget) }
-    var weeklyPacing by remember { mutableStateOf(initialWeeklyPacing) }
+    var periodCount by remember { mutableStateOf(initialPeriodCount) }
     var iconKey by remember { mutableStateOf(initialIconKey) }
     // Dismissing the dialog on confirm happens on the next recomposition, not instantly — an
     // impatient double-tap on Save could land both clicks first and insert the category twice.
     var hasConfirmed by remember { mutableStateOf(false) }
 
     val budgetMinor = Money.rupeesToPaise(budget.ifBlank { "0" })
-    // Spec §4: preview the resulting period split live, computed against the current month's
-    // real day count via the same PeriodCalculator the budget engine uses.
-    val periods = remember { com.budgetpace.app.core.time.PeriodCalculator.periodsFor(java.time.LocalDate.now()) }
-    val split = remember(budgetMinor) { com.budgetpace.app.core.time.PeriodCalculator.splitBudget(budgetMinor, periods) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -295,7 +297,12 @@ fun CategoryFormDialog(
         titleContentColor = MaterialTheme.colorScheme.onBackground,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Scrollable: up to 4 pacing options plus the emoji/name/budget fields can exceed a
+            // small screen's height, and AlertDialog doesn't scroll its content by default.
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 // Emoji picker — spec §4: the chosen icon appears beside the category everywhere.
                 // The curated row is a quick pick; the field below lets any emoji from the
                 // device's own keyboard be used instead, since 20 curated choices don't scale.
@@ -349,17 +356,22 @@ fun CategoryFormDialog(
                 )
 
                 PacingOption(
-                    selected = !weeklyPacing,
+                    selected = periodCount == 1,
                     title = "Spend at start of month",
                     subtitle = "${Money.formatRupeesWhole(budgetMinor)} available in Period 1",
-                    onClick = { weeklyPacing = false },
+                    onClick = { periodCount = 1 },
                 )
-                PacingOption(
-                    selected = weeklyPacing,
-                    title = "Spread across 4 periods",
-                    subtitle = "${split.joinToString(" · ") { Money.formatRupeesWhole(it) }} per period",
-                    onClick = { weeklyPacing = true },
-                )
+                PERIOD_COUNT_OPTIONS.filter { it > 1 }.forEach { n ->
+                    val split = remember(budgetMinor, n) {
+                        com.budgetpace.app.core.time.PeriodCalculator.splitBudget(budgetMinor, n)
+                    }
+                    PacingOption(
+                        selected = periodCount == n,
+                        title = "Spread across $n periods",
+                        subtitle = split.joinToString(" · ") { Money.formatRupeesWhole(it) },
+                        onClick = { periodCount = n },
+                    )
+                }
             }
         },
         confirmButton = {
@@ -367,7 +379,7 @@ fun CategoryFormDialog(
                 enabled = !hasConfirmed,
                 onClick = {
                     hasConfirmed = true
-                    onConfirm(name, budgetMinor, weeklyPacing, iconKey)
+                    onConfirm(name, budgetMinor, periodCount, iconKey)
                 }
             ) {
                 Text("Save", color = Color(0xFF4CAF50))
@@ -611,7 +623,7 @@ fun CategoryMockupRow(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = if (summary.category.weeklyPacingEnabled) "4 periods" else "Start of month",
+                    text = if (summary.category.periodCount <= 1) "Start of month" else "${summary.category.periodCount} periods",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

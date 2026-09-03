@@ -29,7 +29,7 @@ import com.budgetpace.app.feature.categories.CategoryFormDialog
 data class CategoryEntry(
     val name: String,
     val budgetMinor: Long,
-    val weeklyPacingEnabled: Boolean,
+    val periodCount: Int,
     val iconKey: String,
 )
 
@@ -144,13 +144,13 @@ fun OnboardingRoute(
                         title = "Add category",
                         initialName = "",
                         initialBudget = "",
-                        initialWeeklyPacing = true,
+                        initialPeriodCount = 4,
                         initialIconKey = CATEGORY_EMOJI_CHOICES.first(),
                         onDismiss = { showAddDialog = false },
-                        onConfirm = { name, budgetMinor, weeklyPacing, iconKey ->
+                        onConfirm = { name, budgetMinor, periodCount, iconKey ->
                             val trimmed = name.trim()
                             if (trimmed.isNotBlank() && budgetMinor > 0 && categories.none { it.name.equals(trimmed, ignoreCase = true) }) {
-                                categories = categories + CategoryEntry(trimmed, budgetMinor, weeklyPacing, iconKey)
+                                categories = categories + CategoryEntry(trimmed, budgetMinor, periodCount, iconKey)
                             }
                             showAddDialog = false
                         }
@@ -213,7 +213,7 @@ fun OnboardingRoute(
                                     Column {
                                         Text(entry.name, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
                                         Text(
-                                            if (entry.weeklyPacingEnabled) "4 periods" else "Start of month",
+                                            if (entry.periodCount <= 1) "Start of month" else "${entry.periodCount} periods",
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             style = MaterialTheme.typography.bodySmall
                                         )

@@ -41,7 +41,7 @@ data class CategoryEntity(
     val monthId: String,
     val name: String,
     val monthlyBudgetMinor: Long,
-    val weeklyPacingEnabled: Boolean,
+    val periodCount: Int,
     val iconKey: String,
     val sortOrder: Int,
     val active: Boolean,

@@ -43,7 +43,7 @@ data class Category(
     val monthId: UUID,
     val name: String,
     val monthlyBudgetMinor: Long,   // paise
-    val weeklyPacingEnabled: Boolean,
+    val periodCount: Int,           // 1 = spend at start of month (lump sum); 2+ = split N ways
     val iconKey: String,
     val sortOrder: Int,
     val active: Boolean,

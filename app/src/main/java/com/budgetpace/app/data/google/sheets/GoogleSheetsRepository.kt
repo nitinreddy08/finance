@@ -262,7 +262,7 @@ class GoogleSheetsRepository @Inject constructor(
                 cs.category.id.toString(),
                 cs.category.name,
                 paiseToDecimalString(cs.category.monthlyBudgetMinor),
-                cs.category.weeklyPacingEnabled.toString(),
+                cs.category.periodCount.toString(),
                 cs.category.active.toString(),
                 timeFormatter.format(cs.category.createdAt),
                 timeFormatter.format(cs.category.updatedAt),
@@ -343,7 +343,7 @@ class GoogleSheetsRepository @Inject constructor(
             "Bank", "Account", "Recipient", "Reference", "Source", "Created At", "Updated At"
         )
         private val CATEGORIES_HEADER = listOf(
-            "Category ID", "Name", "Monthly Budget", "Weekly Pacing", "Active", "Created At", "Updated At"
+            "Category ID", "Name", "Monthly Budget", "Period Count", "Active", "Created At", "Updated At"
         )
         private val DASHBOARD_HEADER = listOf(
             "Month", "Total Budget", "Total Spent", "Safe To Spend", "% Used"

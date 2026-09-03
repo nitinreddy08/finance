@@ -75,7 +75,7 @@ class OnboardingViewModel @Inject constructor(
                         monthId = monthId,
                         name = entry.name,
                         monthlyBudgetMinor = entry.budgetMinor,
-                        weeklyPacingEnabled = entry.weeklyPacingEnabled,
+                        periodCount = entry.periodCount,
                         iconKey = entry.iconKey,
                         sortOrder = index,
                         active = true,
