@@ -93,7 +93,10 @@ class SmsNotificationListenerService : NotificationListenerService() {
                 val existing = parsed.referenceNumber?.let {
                     transactionDao.findByBankRef(parsed.bank.name, it)
                 } ?: transactionDao.findByDuplicateKey(duplicateKey)
-                if (existing != null) return@launch
+                if (existing != null) {
+                    Log.d("SmsListener", "Duplicate of an already-recorded transaction, skipping: ref=${parsed.referenceNumber}")
+                    return@launch
+                }
 
                 val activeMonth = ensureActiveMonth()
                 val now = Instant.now()
@@ -130,6 +133,7 @@ class SmsNotificationListenerService : NotificationListenerService() {
                 )
 
                 transactionDao.insert(transaction.toEntity())
+                Log.i("SmsListener", "Recorded ${parsed.direction} of ${parsed.amountMinor} paise (${parsed.bank}, ref=${parsed.referenceNumber})")
 
                 if (!isCredit) {
                     val quickCategories = categoryDao.getByMonth(activeMonth.id.toString())
