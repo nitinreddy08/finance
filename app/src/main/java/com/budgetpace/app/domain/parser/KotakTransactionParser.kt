@@ -12,15 +12,19 @@ import java.util.regex.Pattern
 
 class KotakTransactionParser : BankTransactionParser {
     
+    // Kotak's own SMS template has used both "AC" and "A/c" for the account label (observed live:
+    // "Sent Rs.31.00 from Kotak Bank A/c X7970 to Mangi lal on 03-09-26. UPI Ref 624608313331." —
+    // note the "A/c" spelling AND the space before "UPI" that the original pattern didn't allow
+    // for, which together silently failed to parse and dropped the transaction entirely).
     // Sent Rs.27.00 from Kotak Bank AC X7970 to paytm.s2ebzrr@pty on 06-08-26.UPI Ref 621859049153.
     private val debitPattern = Pattern.compile(
-        "Sent\\s+(?:Rs\\.?|INR)\\s*([\\d,]+\\.?\\d*)\\s+from\\s+Kotak\\s+Bank\\s+AC\\s+([A-Z0-9]+)\\s+to\\s+(.+?)\\s+on\\s+(\\d{2}-\\d{2}-\\d{2})\\.?UPI\\s+Ref\\s*(\\d+)",
+        "Sent\\s+(?:Rs\\.?|INR)\\s*([\\d,]+\\.?\\d*)\\s+from\\s+Kotak\\s+Bank\\s+A/?[Cc]\\s+([A-Z0-9]+)\\s+to\\s+(.+?)\\s+on\\s+(\\d{2}-\\d{2}-\\d{2})\\.?\\s*UPI\\s+Ref:?\\s*(\\d+)",
         Pattern.CASE_INSENSITIVE
     )
 
     // Received Rs.6000.00 in your Kotak Bank AC X7970 from nitinreddy@ptyes on 06-08-26.UPI Ref:212542994030.
     private val creditPattern = Pattern.compile(
-        "Received\\s+(?:Rs\\.?|INR)\\s*([\\d,]+\\.?\\d*)\\s+in\\s+your\\s+Kotak\\s+Bank\\s+AC\\s+([A-Z0-9]+)\\s+from\\s+(.+?)\\s+on\\s+(\\d{2}-\\d{2}-\\d{2})\\.?UPI\\s+Ref:?\\s*(\\d+)",
+        "Received\\s+(?:Rs\\.?|INR)\\s*([\\d,]+\\.?\\d*)\\s+in\\s+your\\s+Kotak\\s+Bank\\s+A/?[Cc]\\s+([A-Z0-9]+)\\s+from\\s+(.+?)\\s+on\\s+(\\d{2}-\\d{2}-\\d{2})\\.?\\s*UPI\\s+Ref:?\\s*(\\d+)",
         Pattern.CASE_INSENSITIVE
     )
 

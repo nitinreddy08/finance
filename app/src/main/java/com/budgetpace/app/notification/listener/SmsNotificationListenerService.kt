@@ -47,12 +47,23 @@ class SmsNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
-        if (sbn == null || sbn.packageName != googleMessagesPackage) return
+        if (sbn == null) return
+        if (sbn.packageName != googleMessagesPackage) {
+            // Quietly ignored by design for every other app's notifications — logged at a level
+            // that only shows up if explicitly asked for, so this doesn't spam logcat with every
+            // unrelated notification on the device while still being answerable ("what package
+            // was that message actually from?") without guessing from a screenshot.
+            Log.v("SmsListener", "Ignoring notification from ${sbn.packageName} (not $googleMessagesPackage)")
+            return
+        }
 
         val extras = sbn.notification.extras
         val text = extras.getCharSequence("android.bigText")?.toString()
             ?: extras.getCharSequence("android.text")?.toString()
-        if (text.isNullOrBlank()) return
+        if (text.isNullOrBlank()) {
+            Log.d("SmsListener", "Messaging notification had no text to parse")
+            return
+        }
 
         val input = NotificationInput(
             packageName = sbn.packageName,
@@ -62,8 +73,15 @@ class SmsNotificationListenerService : NotificationListenerService() {
         )
 
         // Spec §14: only high-confidence parses become transactions/prompts.
-        val parsed = parserCoordinator.parse(input) ?: return
-        if (parsed.confidence != ParseConfidence.HIGH) return
+        val parsed = parserCoordinator.parse(input)
+        if (parsed == null) {
+            Log.d("SmsListener", "No parser matched this message: $text")
+            return
+        }
+        if (parsed.confidence != ParseConfidence.HIGH) {
+            Log.d("SmsListener", "Parsed with non-HIGH confidence (${parsed.confidence}), dropping: $text")
+            return
+        }
 
         serviceScope.launch {
             try {

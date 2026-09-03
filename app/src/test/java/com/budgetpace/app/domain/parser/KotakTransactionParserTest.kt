@@ -55,6 +55,33 @@ class KotakTransactionParserTest {
         assertEquals("212542994030", result.referenceNumber)
     }
 
+    /**
+     * Regression: a real live message used "A/c" instead of "AC", and had a space between the
+     * date's trailing period and "UPI" — the original pattern required an exact "AC" substring
+     * and disallowed any space before "UPI", so this entire message silently failed to parse and
+     * the transaction was dropped with no notification at all.
+     */
+    @Test
+    fun testKotakDebitWithSlashAcAndSpaceBeforeUpi() {
+        val input = NotificationInput(
+            "com.google.android.apps.messaging",
+            "Kotak",
+            "Sent Rs.31.00 from Kotak Bank A/c X7970 to Mangi lal on 03-09-26. UPI Ref 624608313331. Not done by you? Tap https://kotak.bank.in/KBANKT/Fraud",
+            now
+        )
+
+        val result = parser.parse(input)
+
+        requireNotNull(result)
+        assertEquals(TransactionDirection.DEBIT, result.direction)
+        assertEquals(3100L, result.amountMinor)
+        assertEquals(Bank.KOTAK, result.bank)
+        assertEquals("X7970", result.accountSuffix)
+        assertEquals("Mangi lal", result.recipient)
+        assertEquals(LocalDate.of(2026, 9, 3), result.transactionDate)
+        assertEquals("624608313331", result.referenceNumber)
+    }
+
     @Test
     fun testUnrelatedMessage() {
         val input = NotificationInput(
