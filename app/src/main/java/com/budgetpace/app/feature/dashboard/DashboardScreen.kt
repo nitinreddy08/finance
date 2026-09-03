@@ -4,8 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -241,16 +239,30 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (pacingCategories.isNotEmpty()) {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        contentPadding = PaddingValues(end = 4.dp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(pacingCategories) { categorySummary ->
-                            CategoryPaceItem(
-                                summary = categorySummary,
-                                currentPeriodIndex = currentPeriodIndex,
-                                onClick = { onCategoryClick(categorySummary.category.id.toString()) },
-                            )
+                        // 4 per row, wrapping to further rows — one border frames the whole grid
+                        // rather than each tile individually.
+                        pacingCategories.chunked(4).forEach { row ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                row.forEach { categorySummary ->
+                                    CategoryPaceItem(
+                                        summary = categorySummary,
+                                        currentPeriodIndex = currentPeriodIndex,
+                                        onClick = { onCategoryClick(categorySummary.category.id.toString()) },
+                                    )
+                                }
+                                repeat(4 - row.size) { Spacer(modifier = Modifier.width(76.dp)) }
+                            }
                         }
                     }
                 }
@@ -351,13 +363,12 @@ private fun PaceSegment(period: PeriodSummary, modifier: Modifier = Modifier) {
     }
 }
 
-private val CATEGORY_BAR_HEIGHT = 96.dp
+private val CATEGORY_BAR_HEIGHT = 130.dp
 
 /**
- * Spec §5: emoji, a scaled mark, amount, and percent — one card per "4 periods" category (a
+ * Spec §5: emoji, a scaled mark, amount, and percent — one tile per "4 periods" category (a
  * "start of month" category has nothing to pace, so it lives in [MoreCategoriesSection] instead).
- * A light border gives each tile a visible boundary now that they scroll horizontally rather than
- * wrapping into a fixed grid, so there's no leftover-space problem to work around.
+ * The whole grid gets one shared border around it (see the caller) rather than one per tile.
  */
 @Composable
 private fun CategoryPaceItem(summary: CategorySummary, currentPeriodIndex: Int?, onClick: () -> Unit) {
@@ -368,10 +379,8 @@ private fun CategoryPaceItem(summary: CategorySummary, currentPeriodIndex: Int?,
     Column(
         modifier = Modifier
             .width(76.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 8.dp),
+            .padding(vertical = 8.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         CategoryIcon(iconKey = summary.category.iconKey, name = summary.category.name, size = 28.dp)
