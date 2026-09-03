@@ -55,10 +55,20 @@ object Money {
 
         // Last 3 digits
         val last3 = s.takeLast(3)
-        val rest = s.dropLast(3)
+        var rest = s.dropLast(3)
 
-        // Remaining groups of 2
-        val grouped = rest.reversed().chunked(2).joinToString(",") { it.reversed() }.reversed()
-        return "$grouped,$last3"
+        // Everything before the last 3 digits groups into pairs, right to left (Indian numbering:
+        // 1,00,000 not 100,000) — e.g. rest="14" -> "14", rest="123" -> "1,23", rest="1234" -> "12,34".
+        // A previous version of this reversed the string, chunked it, reversed each chunk again,
+        // then reversed the whole result a third time — for a 2-digit rest that net-reverses the
+        // pair once too many, silently swapping its digits (14310 rendered as "41,310").
+        val groups = ArrayDeque<String>()
+        while (rest.length > 2) {
+            groups.addFirst(rest.takeLast(2))
+            rest = rest.dropLast(2)
+        }
+        if (rest.isNotEmpty()) groups.addFirst(rest)
+
+        return "${groups.joinToString(",")},$last3"
     }
 }
