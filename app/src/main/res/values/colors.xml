@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the cream background baked into the app logo artwork, used behind the
+         adaptive-icon foreground so the two layers read as one seamless icon. -->
+    <color name="ic_launcher_background">#FAF8F3</color>
+</resources>

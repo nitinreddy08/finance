@@ -20,8 +20,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import com.budgetpace.app.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -201,10 +205,7 @@ fun SettingsScreen(
 
         item {
             SettingsSectionHeader("ABOUT")
-            SettingsMockupItem(
-                icon = "👤",
-                title = "Nitin Reddy N V",
-                subtitle = DEVELOPER_EMAIL,
+            ContactDeveloperItem(
                 onClick = {
                     val intent = Intent(Intent.ACTION_SENDTO).apply {
                         data = Uri.parse("mailto:$DEVELOPER_EMAIL")
@@ -255,6 +256,49 @@ fun SettingsSectionHeader(title: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         letterSpacing = 1.sp,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp)
+    )
+}
+
+/** Same row layout as [SettingsMockupItem], but with the developer's real photo instead of a mock emoji icon. */
+@Composable
+fun ContactDeveloperItem(
+    onClick: () -> Unit = {}
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painter = painterResource(R.drawable.img_developer_avatar),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(32.dp).clip(CircleShape)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = "Nitin Reddy N V",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = DEVELOPER_EMAIL,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    Divider(
+        color = MaterialTheme.colorScheme.outline,
+        modifier = Modifier.padding(horizontal = 24.dp)
     )
 }
 
