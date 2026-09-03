@@ -36,10 +36,10 @@ class BudgetPaceApp : Application(), Configuration.Provider {
     private fun createCategorizationChannel() {
         val channel = NotificationChannel(
             CategorizationNotificationManager.CHANNEL_ID,
-            "Transaction categorization",
+            "Expense categorization",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Prompts to categorize a detected bank transaction (spec §21)."
+            description = "Prompts to categorize a detected bank expense (spec §21)."
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)

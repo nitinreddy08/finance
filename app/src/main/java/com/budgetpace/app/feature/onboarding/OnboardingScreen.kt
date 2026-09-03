@@ -111,7 +111,7 @@ fun OnboardingRoute(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Connect Google to back up your budget and transactions to your personal Google Sheet.",
+                        text = "Connect Google to back up your budget and expenses to your personal Google Sheet.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center

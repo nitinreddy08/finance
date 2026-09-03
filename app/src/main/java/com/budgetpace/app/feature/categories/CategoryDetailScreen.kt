@@ -222,7 +222,7 @@ private fun CategoryDetailBody(
         }
 
         Text(
-            text = "TRANSACTIONS",
+            text = "EXPENSES",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             letterSpacing = 1.sp
@@ -230,7 +230,7 @@ private fun CategoryDetailBody(
         Spacer(modifier = Modifier.height(8.dp))
         if (transactions.isEmpty()) {
             Text(
-                text = "No transactions in this category yet.",
+                text = "No expenses in this category yet.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 16.dp)

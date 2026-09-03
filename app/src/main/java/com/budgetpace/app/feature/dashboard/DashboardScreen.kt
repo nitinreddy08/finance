@@ -1,13 +1,17 @@
 package com.budgetpace.app.feature.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -88,6 +92,7 @@ fun DashboardScreen(
     else 0
     val hasSpending = summary.totalSpentMinor > 0
     var showMonthPicker by remember { mutableStateOf(false) }
+    var showMoreCategories by remember { mutableStateOf(false) }
 
     if (showMonthPicker) {
         MonthPickerDialog(
@@ -216,31 +221,46 @@ fun DashboardScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Your bank transactions will appear here automatically.",
+                        text = "Your bank expenses will appear here automatically.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         } else {
-            // 3 per row, wrapping to further rows — an empty slot is left rather than stretched
-            // when a row isn't full, so category columns always line up the same width. This
-            // area (not the summary above it) is the only part of Home that ever scrolls, and
-            // only once there are enough categories to overflow the available space.
+            // Only a "4 periods" category has real week-by-week pacing worth visualizing — a
+            // "Start of month" category is just a lump sum with nothing to pace, so it moves out
+            // of this scroller into the plain "More categories" list below instead. This area
+            // (not the summary above it) is the only part of Home that ever scrolls.
+            val pacingCategories = summary.categories.filter { it.category.weeklyPacingEnabled }
+            val lumpSumCategories = summary.categories.filterNot { it.category.weeklyPacingEnabled }
+            val currentPeriodIndex = summary.overallPeriods.firstOrNull { it.isCurrentPeriod }?.periodIndex
+
             Column(
                 modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                summary.categories.chunked(3).forEach { row ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        row.forEach { categorySummary ->
+                if (pacingCategories.isNotEmpty()) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(end = 4.dp)
+                    ) {
+                        items(pacingCategories) { categorySummary ->
                             CategoryPaceItem(
                                 summary = categorySummary,
+                                currentPeriodIndex = currentPeriodIndex,
                                 onClick = { onCategoryClick(categorySummary.category.id.toString()) },
                             )
                         }
-                        repeat(3 - row.size) { Spacer(modifier = Modifier.width(64.dp)) }
                     }
+                }
+                if (lumpSumCategories.isNotEmpty()) {
+                    MoreCategoriesSection(
+                        categories = lumpSumCategories,
+                        expanded = showMoreCategories,
+                        onToggle = { showMoreCategories = !showMoreCategories },
+                        onCategoryClick = { categorySummary -> onCategoryClick(categorySummary.category.id.toString()) },
+                    )
                 }
             }
         }
@@ -331,34 +351,32 @@ private fun PaceSegment(period: PeriodSummary, modifier: Modifier = Modifier) {
     }
 }
 
-private val CATEGORY_BAR_HEIGHT = 72.dp
+private val CATEGORY_BAR_HEIGHT = 96.dp
 
 /**
- * Spec §5: emoji, a scaled mark, amount, and percent — one column per category. A "4 periods"
- * category's mark is split into 4 stacked segments (one per period, each colored by that
- * period's own status) since it genuinely has 4 independent budgets; a "start of month" category
- * has only one budget for the whole month, so it gets a single mark instead.
+ * Spec §5: emoji, a scaled mark, amount, and percent — one card per "4 periods" category (a
+ * "start of month" category has nothing to pace, so it lives in [MoreCategoriesSection] instead).
+ * A light border gives each tile a visible boundary now that they scroll horizontally rather than
+ * wrapping into a fixed grid, so there's no leftover-space problem to work around.
  */
 @Composable
-private fun CategoryPaceItem(summary: CategorySummary, onClick: () -> Unit) {
-    val ratio = if (summary.category.monthlyBudgetMinor > 0)
-        summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor
-    else 0f
-    val pct = (ratio * 100).toInt().coerceAtLeast(0)
+private fun CategoryPaceItem(summary: CategorySummary, currentPeriodIndex: Int?, onClick: () -> Unit) {
+    val pct = if (summary.category.monthlyBudgetMinor > 0)
+        (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor * 100).toInt().coerceAtLeast(0)
+    else 0
 
     Column(
         modifier = Modifier
-            .width(64.dp)
-            .clickable(onClick = onClick),
+            .width(76.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         CategoryIcon(iconKey = summary.category.iconKey, name = summary.category.name, size = 28.dp)
         Spacer(modifier = Modifier.height(10.dp))
-        if (summary.category.weeklyPacingEnabled) {
-            CategoryPaceSegmentedMark(summary)
-        } else {
-            CategoryPaceSingleMark(ratio, statusColor(summary.overallStatus), summary.category.name, summary.totalSpentMinor, pct)
-        }
+        CategoryPaceSegmentedMark(summary, currentPeriodIndex)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = Money.formatRupeesWhole(summary.totalSpentMinor),
@@ -373,67 +391,144 @@ private fun CategoryPaceItem(summary: CategorySummary, onClick: () -> Unit) {
     }
 }
 
-/** A single category with one whole-month budget — one mark scaled to overall % used. */
+/**
+ * A "4 periods" category's mark: [CATEGORY_BAR_HEIGHT] split into as many equal cells as the
+ * category has periods, each filled as a discrete step of the category's OVERALL spend fraction
+ * (not that period's own budget) — so "half the month's budget spent" always shows as exactly
+ * half the cells filled, however that spending actually landed across periods. All filled cells
+ * share one color: [CategorySummary.overallStatus], the category's elapsed-time-adjusted pace
+ * (spent vs. what you'd expect to have spent by today given how much of the month has passed) —
+ * so spending it all in period 1 shows red immediately, and eases back to green as elapsed time
+ * catches up if nothing more is spent. The current period's cell gets a subtle highlight border
+ * so "which week am I in" is visible at a glance.
+ */
 @Composable
-private fun CategoryPaceSingleMark(ratio: Float, color: Color, categoryName: String, spentMinor: Long, pct: Int) {
-    // Cap the visual scale at 150% so a large blowout doesn't dominate the chart.
-    val markFraction = (ratio / 1.5f).coerceIn(0.04f, 1f)
-    Box(
-        modifier = Modifier
-            .width(10.dp)
-            .height(CATEGORY_BAR_HEIGHT)
-            .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
-            .semantics {
-                contentDescription = "$categoryName, ${Money.formatRupeesWhole(spentMinor)} spent, $pct% of budget"
-            },
-        contentAlignment = Alignment.BottomCenter
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(markFraction)
-                .clip(RoundedCornerShape(4.dp))
-                .background(color)
-        )
-    }
-}
+private fun CategoryPaceSegmentedMark(summary: CategorySummary, currentPeriodIndex: Int?) {
+    val overallFraction = if (summary.category.monthlyBudgetMinor > 0)
+        (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor).coerceIn(0f, 1f)
+    else 0f
+    val pct = (overallFraction * 100).toInt()
+    val color = statusColor(summary.overallStatus)
+    val sortedAscending = summary.periods.sortedBy { it.periodIndex }
+    val periodCount = sortedAscending.size.coerceAtLeast(1)
+    val highlightColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
 
-/** A "4 periods" category — 4 stacked segments, each independently filled by that period's own spend. */
-@Composable
-private fun CategoryPaceSegmentedMark(summary: CategorySummary) {
     Column(
         modifier = Modifier
-            .width(10.dp)
+            .width(14.dp)
             .height(CATEGORY_BAR_HEIGHT)
             .semantics {
-                contentDescription = "${summary.category.name}: " + summary.periods.joinToString(", ") { p ->
-                    "period ${p.periodIndex + 1} ${Money.formatRupeesWhole(p.spentMinor)} of ${Money.formatRupeesWhole(p.effectiveBudgetMinor)}"
-                }
+                contentDescription = "${summary.category.name}, ${Money.formatRupeesWhole(summary.totalSpentMinor)} of " +
+                    "${Money.formatRupeesWhole(summary.category.monthlyBudgetMinor)}, $pct% used"
             },
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        // Top of the column = period 4, bottom = period 1, so it reads the same direction as the
-        // overall pace bar (left-to-right becomes bottom-to-top for a vertical mark).
-        summary.periods.sortedByDescending { it.periodIndex }.forEach { period ->
-            val filled = if (period.periodStatus == PeriodStatus.UPCOMING || period.effectiveBudgetMinor <= 0) 0f
-            else (period.spentMinor.toFloat() / period.effectiveBudgetMinor).coerceIn(0f, 1f)
+        // Top of the column = the last period, bottom = the first — same reading direction as
+        // the overall pace bar (left-to-right becomes bottom-to-top for a vertical mark).
+        sortedAscending.reversed().forEach { period ->
+            val cellFraction = (overallFraction * periodCount - period.periodIndex).coerceIn(0f, 1f)
+            val isCurrent = period.periodIndex == currentPeriodIndex
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    .then(
+                        if (isCurrent) Modifier.border(1.dp, highlightColor, RoundedCornerShape(3.dp))
+                        else Modifier
+                    ),
                 contentAlignment = Alignment.BottomCenter
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(filled)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(statusColor(period.paceStatus))
-                )
+                if (cellFraction > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(cellFraction)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(color)
+                    )
+                }
             }
+        }
+    }
+}
+
+/** A collapsible list for "start of month" categories — a lump sum with nothing to pace, so a
+ * plain row (no bar) is enough; kept out of the horizontally-scrolling pace row above. */
+@Composable
+private fun MoreCategoriesSection(
+    categories: List<CategorySummary>,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onCategoryClick: (CategorySummary) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "More categories (${categories.size})",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                categories.forEach { categorySummary ->
+                    LumpSumCategoryRow(summary = categorySummary, onClick = { onCategoryClick(categorySummary) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LumpSumCategoryRow(summary: CategorySummary, onClick: () -> Unit) {
+    val pct = if (summary.category.monthlyBudgetMinor > 0)
+        (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor * 100).toInt().coerceAtLeast(0)
+    else 0
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CategoryIcon(iconKey = summary.category.iconKey, name = summary.category.name, size = 22.dp)
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = summary.category.name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "${Money.formatRupeesWhole(summary.totalSpentMinor)} / ${Money.formatRupeesWhole(summary.category.monthlyBudgetMinor)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "$pct%",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = statusColor(summary.overallStatus)
+            )
         }
     }
 }

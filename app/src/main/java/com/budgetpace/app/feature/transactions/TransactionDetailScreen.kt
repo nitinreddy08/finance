@@ -118,7 +118,7 @@ fun TransactionDetailRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Transaction Details", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
+                title = { Text("Expense Details", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)

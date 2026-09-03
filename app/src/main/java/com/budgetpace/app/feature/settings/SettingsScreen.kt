@@ -106,7 +106,7 @@ fun SettingsScreen(
             title = { Text("Delete local data?") },
             text = {
                 // Spec §73
-                Text("This removes transactions and budgets stored on this phone.\n\nYour Google Sheet will not be deleted.")
+                Text("This removes expenses and budgets stored on this phone.\n\nYour Google Sheet will not be deleted.")
             },
             confirmButton = {
                 TextButton(onClick = {

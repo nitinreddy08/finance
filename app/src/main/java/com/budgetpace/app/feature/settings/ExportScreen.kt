@@ -21,7 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
- * Spec §15: Settings → Data → Export. Only "Transactions" is actually wired to CSV export in V1;
+ * Spec §15: Settings → Data → Export. Only "Expenses" is actually wired to CSV export in V1;
  * Budget and Analytics are shown honestly as not yet available rather than pretending to work.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,7 +78,7 @@ fun ExportRoute(
             Spacer(modifier = Modifier.height(12.dp))
 
             ExportOptionRow(
-                label = "Transactions",
+                label = "Expenses",
                 checked = includeTransactions,
                 enabled = true,
                 onCheckedChange = { includeTransactions = it },

@@ -12,11 +12,14 @@ import com.google.api.client.http.HttpRequestInitializer
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.sheets.v4.Sheets
+import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest
 import com.google.api.services.sheets.v4.model.ClearValuesRequest
+import com.google.api.services.sheets.v4.model.Request
 import com.google.api.services.sheets.v4.model.Sheet
 import com.google.api.services.sheets.v4.model.SheetProperties
 import com.google.api.services.sheets.v4.model.Spreadsheet
 import com.google.api.services.sheets.v4.model.SpreadsheetProperties
+import com.google.api.services.sheets.v4.model.UpdateSheetPropertiesRequest
 import com.google.api.services.sheets.v4.model.ValueRange
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +52,10 @@ class GoogleSheetsRepository @Inject constructor(
         get() = prefs.getString(KEY_SPREADSHEET_ID, null)
         set(value) = prefs.edit().putString(KEY_SPREADSHEET_ID, value).apply()
 
+    private var expensesTabMigrated: Boolean
+        get() = prefs.getBoolean(KEY_EXPENSES_TAB_MIGRATED, false)
+        set(value) = prefs.edit().putBoolean(KEY_EXPENSES_TAB_MIGRATED, value).apply()
+
     /** Epoch millis of the last successful sync, for the Settings "Last backup" line (spec §54). */
     fun lastSyncAtMillis(): Long? = prefs.getLong(KEY_LAST_SYNC_AT, -1L).takeIf { it >= 0 }
 
@@ -63,7 +70,10 @@ class GoogleSheetsRepository @Inject constructor(
 
     /** Creates the workbook (spec §51's 4 tabs, each with its header row) if one isn't cached yet. */
     suspend fun ensureWorkbook(): Result<String> = withContext(Dispatchers.IO) {
-        spreadsheetId?.let { return@withContext Result.success(it) }
+        spreadsheetId?.let { id ->
+            migrateTransactionsTabIfNeeded(id)
+            return@withContext Result.success(id)
+        }
         val token = authorizationManager.currentAccessToken()
             ?: return@withContext Result.failure(IllegalStateException("Google Sheets is not authorized yet"))
 
@@ -72,7 +82,7 @@ class GoogleSheetsRepository @Inject constructor(
             val spreadsheet = Spreadsheet()
                 .setProperties(SpreadsheetProperties().setTitle("Budget Pace"))
                 .setSheets(
-                    listOf("Dashboard", "Transactions", "Analytics", "Categories").map { tabTitle ->
+                    listOf("Dashboard", TRANSACTIONS_TAB, "Analytics", "Categories").map { tabTitle ->
                         Sheet().setProperties(SheetProperties().setTitle(tabTitle))
                     }
                 )
@@ -81,7 +91,7 @@ class GoogleSheetsRepository @Inject constructor(
                 ?: return@withContext Result.failure(IllegalStateException("Sheets API returned no spreadsheet id"))
 
             sheets.spreadsheets().values()
-                .update(id, "Transactions!A1", ValueRange().setValues(listOf(TRANSACTIONS_HEADER)))
+                .update(id, "$TRANSACTIONS_TAB!A1", ValueRange().setValues(listOf(TRANSACTIONS_HEADER)))
                 .setValueInputOption("RAW")
                 .execute()
             sheets.spreadsheets().values()
@@ -98,10 +108,55 @@ class GoogleSheetsRepository @Inject constructor(
                 .execute()
 
             spreadsheetId = id
+            expensesTabMigrated = true // a brand-new workbook is already on the new tab name
             Result.success(id)
         } catch (e: Exception) {
             Log.e("GoogleSheetsRepository", "ensureWorkbook failed: ${e.javaClass.simpleName}: ${e.message}", e)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * A user who synced before this app renamed "Transactions" to "Expenses" already has a real
+     * Sheet with a tab literally titled "Transactions" — if the app just started referencing
+     * "Expenses!..." ranges instead, every sync would break with a nonexistent-range error. This
+     * renames that existing tab in place (preserving its data) instead of creating a new blank
+     * one, and only runs the extra API calls once per install via [expensesTabMigrated].
+     */
+    private suspend fun migrateTransactionsTabIfNeeded(id: String) {
+        if (expensesTabMigrated) return
+        val token = authorizationManager.currentAccessToken() ?: return
+        try {
+            val sheets = sheetsClient(token)
+            val oldTab = sheets.spreadsheets().get(id).execute().sheets.orEmpty()
+                .firstOrNull { it.properties?.title == "Transactions" }
+            if (oldTab != null) {
+                val sheetId = oldTab.properties?.sheetId
+                if (sheetId != null) {
+                    sheets.spreadsheets().batchUpdate(
+                        id,
+                        BatchUpdateSpreadsheetRequest().setRequests(
+                            listOf(
+                                Request().setUpdateSheetProperties(
+                                    UpdateSheetPropertiesRequest()
+                                        .setProperties(SheetProperties().setSheetId(sheetId).setTitle(TRANSACTIONS_TAB))
+                                        .setFields("title")
+                                )
+                            )
+                        )
+                    ).execute()
+                }
+                // The header cell still reads the old column name — refresh it to match.
+                sheets.spreadsheets().values()
+                    .update(id, "$TRANSACTIONS_TAB!A1", ValueRange().setValues(listOf(TRANSACTIONS_HEADER)))
+                    .setValueInputOption("RAW")
+                    .execute()
+            }
+            expensesTabMigrated = true
+        } catch (e: Exception) {
+            // Leave expensesTabMigrated false so this is retried on the next sync rather than
+            // silently leaving an old-named tab in place forever.
+            Log.e("GoogleSheetsRepository", "Expenses tab migration failed: ${e.javaClass.simpleName}: ${e.message}", e)
         }
     }
 
@@ -124,7 +179,7 @@ class GoogleSheetsRepository @Inject constructor(
             // Column A holds the transaction UUID; read it once — shared by both the
             // append-vs-update decision below and deletion processing.
             val existingRowByTxnId: MutableMap<String, Int> = sheets.spreadsheets().values()
-                .get(id, "Transactions!A2:A")
+                .get(id, "$TRANSACTIONS_TAB!A2:A")
                 .execute()
                 .getValues()
                 ?.mapIndexedNotNull { index, row -> row.firstOrNull()?.toString()?.let { it to (index + 2) } }
@@ -144,7 +199,7 @@ class GoogleSheetsRepository @Inject constructor(
                     val existingRow = existingRowByTxnId[txn.id.toString()]
                     if (existingRow != null) {
                         sheets.spreadsheets().values()
-                            .update(id, "Transactions!A$existingRow", ValueRange().setValues(listOf(row)))
+                            .update(id, "$TRANSACTIONS_TAB!A$existingRow", ValueRange().setValues(listOf(row)))
                             .setValueInputOption("RAW")
                             .execute()
                         // Only mark SYNCED once the write actually succeeded.
@@ -157,7 +212,7 @@ class GoogleSheetsRepository @Inject constructor(
 
                 if (toAppend.isNotEmpty()) {
                     sheets.spreadsheets().values()
-                        .append(id, "Transactions!A:A", ValueRange().setValues(toAppend.map { it.second }))
+                        .append(id, "$TRANSACTIONS_TAB!A:A", ValueRange().setValues(toAppend.map { it.second }))
                         .setValueInputOption("RAW")
                         .execute()
                     toAppend.forEach { (txn, _) -> transactionRepository.markSynced(txn.id.toString()) }
@@ -187,7 +242,7 @@ class GoogleSheetsRepository @Inject constructor(
             val row = existingRowByTxnId[tombstone.transactionId]
             if (row != null) {
                 sheets.spreadsheets().values()
-                    .clear(spreadsheetId, "Transactions!A$row:M$row", ClearValuesRequest())
+                    .clear(spreadsheetId, "$TRANSACTIONS_TAB!A$row:M$row", ClearValuesRequest())
                     .execute()
                 existingRowByTxnId.remove(tombstone.transactionId)
             }
@@ -281,8 +336,10 @@ class GoogleSheetsRepository @Inject constructor(
     companion object {
         private const val KEY_SPREADSHEET_ID = "spreadsheet_id"
         private const val KEY_LAST_SYNC_AT = "last_sync_at"
+        private const val KEY_EXPENSES_TAB_MIGRATED = "expenses_tab_migrated"
+        private const val TRANSACTIONS_TAB = "Expenses"
         private val TRANSACTIONS_HEADER = listOf(
-            "Transaction ID", "Date", "Time", "Amount", "Direction", "Category",
+            "Expense ID", "Date", "Time", "Amount", "Direction", "Category",
             "Bank", "Account", "Recipient", "Reference", "Source", "Created At", "Updated At"
         )
         private val CATEGORIES_HEADER = listOf(

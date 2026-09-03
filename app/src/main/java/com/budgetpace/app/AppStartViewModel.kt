@@ -47,12 +47,13 @@ class AppStartViewModel @Inject constructor(
             }
         }
 
-        // A restored session/authorization only carries identity, not a live token — refresh
-        // both silently so the UI doesn't wrongly show "not connected" after every restart even
-        // though Google-side consent from a previous session is still valid. The restored
-        // session's email (if any) is already available synchronously, so authorization can tie
-        // itself to that same account without waiting on the (idToken-only) session refresh.
-        viewModelScope.launch { authRepository.refreshSessionSilently() }
+        // AuthRepositoryImpl already restores email/displayName synchronously from encrypted
+        // prefs at construction time, which is all the UI needs to show "signed in" correctly —
+        // so authorization can tie itself to that account right away. We deliberately do NOT call
+        // authRepository.refreshSessionSilently() here: even with Credential Manager's "silent"
+        // options set, getCredential() still briefly renders its bottom-sheet chrome ("Signing you
+        // in…") on screen before auto-dismissing, which showed up as a visible flash on every
+        // single cold launch. There's no real need for a fresh ID token just to display identity.
         viewModelScope.launch { authorizationManager.restoreIfNeeded(authRepository.currentSession.value?.email) }
     }
 }

@@ -90,7 +90,7 @@ fun TransactionsRoute(
         }
         is TransactionsUiState.Error -> {
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-                Text("Error loading transactions", color = MaterialTheme.colorScheme.onBackground)
+                Text("Error loading expenses", color = MaterialTheme.colorScheme.onBackground)
             }
         }
     }
@@ -108,7 +108,7 @@ fun TransactionsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("Transactions", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                    Text("Expenses", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

@@ -152,7 +152,7 @@ private fun AppShell(
                     NavIconItem(
                         selected = currentRoute == Screen.Transactions.route,
                         icon = Icons.Default.SwapHoriz,
-                        contentDescription = "Transactions",
+                        contentDescription = "Expenses",
                         onClick = { navController.navigate(Screen.Transactions.route) { launchSingleTop = true } },
                     )
                     NavIconItem(

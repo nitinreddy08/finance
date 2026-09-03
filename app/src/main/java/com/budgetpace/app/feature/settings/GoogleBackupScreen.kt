@@ -53,7 +53,7 @@ fun GoogleBackupRoute(
     LaunchedEffect(sheetsSyncState) {
         when (val state = sheetsSyncState) {
             is SheetsSyncState.Success -> {
-                val message = if (state.syncedCount == 0) "Already up to date" else "Synced ${state.syncedCount} transaction(s)"
+                val message = if (state.syncedCount == 0) "Already up to date" else "Synced ${state.syncedCount} expense(s)"
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 viewModel.consumeSheetsSyncState()
             }
@@ -139,7 +139,7 @@ fun GoogleBackupRoute(
                 SettingsMockupItem(
                     icon = "📊",
                     title = "Backed up",
-                    subtitle = "$syncedCount transaction${if (syncedCount == 1) "" else "s"}"
+                    subtitle = "$syncedCount expense${if (syncedCount == 1) "" else "s"}"
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))

@@ -279,6 +279,9 @@ fun CategoryFormDialog(
     var budget by remember { mutableStateOf(initialBudget) }
     var weeklyPacing by remember { mutableStateOf(initialWeeklyPacing) }
     var iconKey by remember { mutableStateOf(initialIconKey) }
+    // Dismissing the dialog on confirm happens on the next recomposition, not instantly — an
+    // impatient double-tap on Save could land both clicks first and insert the category twice.
+    var hasConfirmed by remember { mutableStateOf(false) }
 
     val budgetMinor = Money.rupeesToPaise(budget.ifBlank { "0" })
     // Spec §4: preview the resulting period split live, computed against the current month's
@@ -360,7 +363,13 @@ fun CategoryFormDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(name, budgetMinor, weeklyPacing, iconKey) }) {
+            TextButton(
+                enabled = !hasConfirmed,
+                onClick = {
+                    hasConfirmed = true
+                    onConfirm(name, budgetMinor, weeklyPacing, iconKey)
+                }
+            ) {
                 Text("Save", color = Color(0xFF4CAF50))
             }
         },
@@ -424,8 +433,8 @@ fun DeleteCategoryFlow(
             title = { Text("Delete \"${category.name}\"?") },
             text = {
                 Text(
-                    if (txns.isEmpty()) "No transactions use this category."
-                    else "${txns.size} transaction${if (txns.size == 1) "" else "s"} use this category."
+                    if (txns.isEmpty()) "No expenses use this category."
+                    else "${txns.size} expense${if (txns.size == 1) "" else "s"} use this category."
                 )
             },
             confirmButton = {
@@ -443,7 +452,7 @@ fun DeleteCategoryFlow(
                 Column {
                     if (txns.isNotEmpty()) {
                         TextButton(onClick = { mode = "select" }) {
-                            Text("Select transactions", color = MaterialTheme.colorScheme.onBackground)
+                            Text("Select expenses", color = MaterialTheme.colorScheme.onBackground)
                         }
                     }
                     TextButton(onClick = onCancel) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -466,7 +475,7 @@ fun DeleteCategoryFlow(
                 onDismissRequest = onCancel,
                 containerColor = MaterialTheme.colorScheme.surface,
                 titleContentColor = MaterialTheme.colorScheme.onBackground,
-                title = { Text("Move transactions") },
+                title = { Text("Move expenses") },
                 text = {
                     Column {
                         Row(
@@ -535,12 +544,45 @@ fun CategoriesList(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp) // Space for bottom nav
+        contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp) // Space for bottom nav
     ) {
+        item { CategoriesColumnHeader() }
         items(categories) { category ->
             CategoryMockupRow(
                 summary = category,
                 onClick = { onCategoryClick(category) }
+            )
+        }
+    }
+}
+
+/** Labels the three trailing values every [CategoryMockupRow] shows — otherwise a bare
+ * "₹9,000  ₹9,000  100%" gives no clue which number is the limit and which is spent. */
+@Composable
+private fun CategoriesColumnHeader() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Spacer(modifier = Modifier.weight(1f))
+        Row {
+            Text(
+                text = "Limit",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = "Spent",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = "%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(40.dp)
             )
         }
     }

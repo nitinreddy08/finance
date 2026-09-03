@@ -1,5 +1,6 @@
 package com.budgetpace.app.data.repository
 
+import android.util.Log
 import com.budgetpace.app.core.model.*
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
 import com.budgetpace.app.data.local.dao.CarryForwardDao
@@ -37,13 +38,27 @@ class BudgetRepositoryImpl(
             carryForwardDao.observeByMonth(monthId)
         ) { monthEntity, categoryEntities, transactionEntities, carryForwardEntities ->
             if (monthEntity == null) return@combine null
-            
-            BudgetEngine.calculateMonthSummary(
+
+            val summary = BudgetEngine.calculateMonthSummary(
                 month = monthEntity.toDomain(),
                 categories = categoryEntities.map { it.toDomain() },
                 transactions = transactionEntities.map { it.toDomain() },
                 carryForwards = carryForwardEntities.map { it.toDomain() }
             )
+
+            // Temporary diagnostic: if the Home screen's Spent/Budget/% used figures ever look
+            // inconsistent with each other again, this is the one logcat line that shows exactly
+            // what BudgetEngine computed and from how many raw rows, instead of guessing from a
+            // screenshot.
+            Log.d(
+                "BudgetRepository",
+                "monthId=$monthId totalBudgetMinor=${summary.totalBudgetMinor} " +
+                    "totalSpentMinor=${summary.totalSpentMinor} " +
+                    "categoryCount=${categoryEntities.size} transactionCount=${transactionEntities.size} " +
+                    "categories=" + categoryEntities.joinToString { "${it.name}(id=${it.id.take(8)})=${it.monthlyBudgetMinor}" }
+            )
+
+            summary
         }
     }
 }

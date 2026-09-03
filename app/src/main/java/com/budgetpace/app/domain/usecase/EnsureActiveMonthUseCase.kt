@@ -7,10 +7,13 @@ import com.budgetpace.app.data.local.dao.CategoryDao
 import com.budgetpace.app.data.local.entity.BudgetMonthEntity
 import com.budgetpace.app.data.local.entity.CategoryEntity
 import com.budgetpace.app.data.local.mapper.toDomain
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Spec §57 (month rollover) + §46/§47: exactly one BudgetMonth is ACTIVE at a time, and the
@@ -20,23 +23,31 @@ import javax.inject.Inject
  * This is the single place that creates or rolls over the active month, called both from the
  * notification pipeline (a transaction must always land in a real, current month) and from app
  * startup, so a month change is picked up "at the first suitable app/background execution" as
- * the spec requires — there is no calendar-triggered background job in V1.
+ * the spec requires — there is no calendar-triggered background job in V1. Those two call sites
+ * are completely uncoordinated (a background SMS notification can arrive at the same instant the
+ * app is cold-starting), and the read-then-archive-then-create sequence below isn't a single DB
+ * transaction, so without a lock two racing calls could both see the same stale "active" month and
+ * both roll it over — duplicating the previous month's categories into the new month. `@Singleton`
+ * ensures both call sites share the exact same `Mutex` instance, not one each.
  */
+@Singleton
 class EnsureActiveMonthUseCase @Inject constructor(
     private val budgetMonthDao: BudgetMonthDao,
     private val categoryDao: CategoryDao,
 ) {
-    suspend operator fun invoke(today: LocalDate = LocalDate.now()): BudgetMonth {
+    private val mutex = Mutex()
+
+    suspend operator fun invoke(today: LocalDate = LocalDate.now()): BudgetMonth = mutex.withLock {
         val active = budgetMonthDao.getActiveMonth()
 
         if (active != null && active.year == today.year && active.month == today.monthValue) {
-            return active.toDomain()
+            return@withLock active.toDomain()
         }
 
         if (active == null) {
             // First-ever month (should normally be created by onboarding, but this makes the
             // use case safe to call standalone too, e.g. from the notification pipeline).
-            return createMonth(today).toDomain()
+            return@withLock createMonth(today).toDomain()
         }
 
         // Calendar month has moved on: archive the old one, carry its category *configuration*
@@ -51,7 +62,7 @@ class EnsureActiveMonthUseCase @Inject constructor(
             categoryDao.insertAll(previousCategories.map { it.copyForNewMonth(newMonth.id, now) })
         }
 
-        return newMonth.toDomain()
+        newMonth.toDomain()
     }
 
     private suspend fun createMonth(today: LocalDate, now: Instant = Instant.now()): BudgetMonthEntity {
