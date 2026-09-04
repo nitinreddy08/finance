@@ -33,6 +33,13 @@ object Money {
         return "${if (negative) "-" else ""}₹${formatIndianNumber(rupees)}"
     }
 
+    /**
+     * Machine-readable amount for exports: "1234.56", never Indian-grouped. Grouping commas in a
+     * CSV field shift every following column, and a grouped string in a Sheets cell is text rather
+     * than a number, so both exporters share this.
+     */
+    fun toDecimalString(paise: Long): String = BigDecimal(paise).movePointLeft(2).toPlainString()
+
     /** Convert a decimal rupee string (e.g. "353.00") to paise Long */
     fun rupeesToPaise(rupeesDecimal: String): Long {
         return try {
