@@ -115,8 +115,14 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    // collectAsStateWithLifecycle / LifecycleResumeEffect — used to refresh permission state when
+    // the owner returns from system Settings, and to catch a month rollover on every foreground.
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
+    // Holds the system splash until we know whether onboarding already ran, so the first frame is
+    // the right screen rather than a white flash followed by a spinner.
+    implementation(libs.androidx.core.splashscreen)
 
     // Compose BOM
     implementation(platform(libs.androidx.compose.bom))
@@ -167,16 +173,17 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0-rc01")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     // Authorization API: requests the drive.file/Sheets scope as a step separate from
-    // Credential Manager sign-in, per spec §7.
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
-    // Encrypted local storage for the persisted sign-in/authorization state — plain
-    // SharedPreferences is fine for the spreadsheet ID (GoogleSheetsRepository) but not for
-    // anything identity-adjacent.
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // Credential Manager sign-in, per spec §7. 22.0.0 is the floor, not a preference:
+    // AuthorizationClient.clearToken(ClearTokenRequest) — how a stale token is dropped after a
+    // Sheets 401 — does not exist before 21.4.0.
+    implementation("com.google.android.gms:play-services-auth:22.0.0")
+    // No androidx.security here on purpose: EncryptedSharedPreferences can throw for the whole
+    // life of an install once the Keystore entry is lost (a restore, a lock-screen change), and
+    // it stores nothing here that is worth that risk — an email address and two booleans. The
+    // tokens themselves are never persisted by this app; Play services holds them.
 }
 
 dependencies {
-    implementation("com.google.api-client:google-api-client-android:1.35.0")
     implementation("com.google.apis:google-api-services-sheets:v4-rev20230815-2.0.0") {
         exclude(group = "org.apache.httpcomponents")
     }

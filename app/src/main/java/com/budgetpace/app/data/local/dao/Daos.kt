@@ -23,6 +23,13 @@ interface BudgetMonthDao {
     @Query("SELECT * FROM budget_months WHERE status = 'ACTIVE' LIMIT 1")
     suspend fun getActiveMonth(): BudgetMonthEntity?
 
+    /**
+     * Newest first. Used to seed a newly created month from the most recent earlier month's
+     * category configuration — including when a kill mid-rollover left no ACTIVE month at all.
+     */
+    @Query("SELECT * FROM budget_months ORDER BY year DESC, month DESC")
+    suspend fun getAll(): List<BudgetMonthEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(month: BudgetMonthEntity)
 
@@ -60,6 +67,14 @@ interface CategoryDao {
 
     @Query("UPDATE categories SET active = 0, updatedAt = :now WHERE id = :id")
     suspend fun deactivate(id: String, now: Long)
+
+    /**
+     * Every category of the month, active or not, as a snapshot. The sync's Categories tab lists
+     * inactive ones with Active=false so a deactivated category does not simply vanish from the
+     * owner's sheet.
+     */
+    @Query("SELECT * FROM categories WHERE monthId = :monthId ORDER BY sortOrder ASC")
+    fun observeAllByMonth(monthId: String): Flow<List<CategoryEntity>>
 }
 
 // ─── TransactionDao ───────────────────────────────────────────────────────────
@@ -162,7 +177,95 @@ interface TransactionDao {
 
     @Query("UPDATE transactions SET syncState = 'SYNCED', updatedAt = :now WHERE id = :id")
     suspend fun markSynced(id: String, now: Long)
+
+    // ── Conditional writes ────────────────────────────────────────────────────
+    // Each returns the number of rows it changed, which is the only reliable way for a background
+    // receiver to know whether it won a race with the in-app chooser. A read-then-write check
+    // would happily overwrite a category the owner had just picked by hand.
+
+    /** Assigns a category only while the expense still has none. Returns 1 when it applied. */
+    @Query("""
+        UPDATE transactions
+        SET categoryId = :categoryId, syncState = 'PENDING', updatedAt = :now
+        WHERE id = :id AND categoryId IS NULL AND recordDecision = 'RECORDED'
+    """)
+    suspend fun assignCategoryIfUnset(id: String, categoryId: String, now: Long): Int
+
+    /** "Don't record", only while the expense is still recorded. Returns 1 when it applied. */
+    @Query("""
+        UPDATE transactions
+        SET recordDecision = 'IGNORED', syncState = 'PENDING', updatedAt = :now
+        WHERE id = :id AND recordDecision = 'RECORDED'
+    """)
+    suspend fun markIgnoredIfRecorded(id: String, now: Long): Int
+
+    /** Undo of the above. Returns 1 when it applied. */
+    @Query("""
+        UPDATE transactions
+        SET recordDecision = 'RECORDED', syncState = 'PENDING', updatedAt = :now
+        WHERE id = :id AND recordDecision = 'IGNORED'
+    """)
+    suspend fun markRecordedIfIgnored(id: String, now: Long): Int
+
+    /**
+     * Marks a row synced only if it has not been edited since the upload read it. Deliberately
+     * does not write updatedAt: doing so would look like a fresh edit to the next sync.
+     */
+    @Query("UPDATE transactions SET syncState = 'SYNCED' WHERE id = :id AND updatedAt = :updatedAtSeen")
+    suspend fun markSyncedIfUnchanged(id: String, updatedAtSeen: Long): Int
+
+    /** Reseeds the whole history for upload into a brand-new spreadsheet. */
+    @Query("UPDATE transactions SET syncState = 'PENDING'")
+    suspend fun markAllPending()
+
+    /** A renamed category has to reach the sheet, and the name lives on the transaction rows. */
+    @Query("UPDATE transactions SET syncState = 'PENDING' WHERE categoryId = :categoryId")
+    suspend fun markPendingByCategory(categoryId: String)
+
+    /** What "Backed up N expenses" counts: ignored rows are deliberately absent from the sheet. */
+    @Query("SELECT COUNT(*) FROM transactions WHERE syncState = 'SYNCED' AND recordDecision = 'RECORDED'")
+    fun observeSyncedRecordedCount(): Flow<Int>
+
+    /** Drives the "N expenses need a category" row on Home and the Expenses tab badge. */
+    @Query("""
+        SELECT COUNT(*) FROM transactions
+        WHERE monthId = :monthId AND recordDecision = 'RECORDED'
+          AND direction = 'DEBIT' AND categoryId IS NULL
+    """)
+    fun observeUncategorizedCount(monthId: String): Flow<Int>
+
+    /** Includes IGNORED rows, so "Show hidden" in Expenses can bring a mis-tap back. */
+    @androidx.room.Transaction
+    @Query("""
+        SELECT * FROM transactions
+        WHERE monthId = :monthId
+        ORDER BY transactionDate DESC, createdAt DESC
+    """)
+    fun observeAllWithCategoryByMonth(monthId: String): Flow<List<TransactionWithCategoryEntity>>
+
+    // ── Quick-action ranking (spec section 21) ────────────────────────────────
+    // Both filter to categorized debits: a credit or an uncategorized row says nothing about
+    // which category the owner would pick.
+
+    @Query("""
+        SELECT categoryId AS categoryId, COUNT(*) AS count FROM transactions
+        WHERE monthId = :monthId AND direction = 'DEBIT' AND categoryId IS NOT NULL
+          AND recordDecision = 'RECORDED'
+        GROUP BY categoryId
+    """)
+    suspend fun categoryUsageThisMonth(monthId: String): List<CategoryUsageRow>
+
+    @Query("""
+        SELECT categoryId AS categoryId, COUNT(*) AS count FROM transactions
+        WHERE direction = 'DEBIT' AND categoryId IS NOT NULL AND recordDecision = 'RECORDED'
+          AND recipient IS NOT NULL AND recipient = :payee
+        GROUP BY categoryId
+    """)
+    suspend fun categoryUsageForPayee(payee: String): List<CategoryUsageRow>
 }
+
+/** Projection for the two usage queries above; maps 1:1 onto the pure `CategoryUsage`. */
+data class CategoryUsageRow(val categoryId: String, val count: Int)
 
 // ─── CarryForwardDao ──────────────────────────────────────────────────────────
 @Dao
@@ -179,6 +282,13 @@ interface CarryForwardDao {
 
     @Delete
     suspend fun delete(cf: CarryForwardEntity)
+
+    /**
+     * Changing a category's period count renumbers its periods, so every carry-forward it holds
+     * now points at a period that means something else. Dropping them is the only honest option.
+     */
+    @Query("DELETE FROM carry_forwards WHERE categoryId = :categoryId")
+    suspend fun deleteByCategory(categoryId: String)
 }
 
 // ─── DeletedTransactionDao (sync tombstones) ───────────────────────────────────

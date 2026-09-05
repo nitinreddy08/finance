@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Exports are written here before being shared; the cache keeps them out of the way once
+         the receiving app has copied what it needs. -->
+    <cache-path name="exports" path="exports/" />
+</paths>
