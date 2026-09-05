@@ -110,4 +110,37 @@ class PeriodCalculatorTest {
         assertEquals(1, onePeriod.size)
         assertEquals(30, onePeriod[0].days)
     }
+
+    @Test
+    fun testClampedPeriodIndexInsideTheMonth() {
+        val periods = PeriodCalculator.periodsFor(2026, 9) // 1-8 / 9-15 / 16-23 / 24-30
+
+        assertEquals(0, PeriodCalculator.clampedPeriodIndex(periods, LocalDate.of(2026, 9, 1)))
+        assertEquals(0, PeriodCalculator.clampedPeriodIndex(periods, LocalDate.of(2026, 9, 8)))
+        assertEquals(1, PeriodCalculator.clampedPeriodIndex(periods, LocalDate.of(2026, 9, 9)))
+        assertEquals(2, PeriodCalculator.clampedPeriodIndex(periods, LocalDate.of(2026, 9, 16)))
+        assertEquals(3, PeriodCalculator.clampedPeriodIndex(periods, LocalDate.of(2026, 9, 30)))
+    }
+
+    @Test
+    fun testClampedPeriodIndexOutsideTheMonth() {
+        // A transaction filed under this month but dated outside it must still land in exactly one
+        // period, so the period spends keep adding up to the month's total.
+        val periods = PeriodCalculator.periodsFor(2026, 9)
+
+        assertEquals(0, PeriodCalculator.clampedPeriodIndex(periods, LocalDate.of(2026, 8, 31)))
+        assertEquals(0, PeriodCalculator.clampedPeriodIndex(periods, LocalDate.of(2025, 1, 1)))
+        assertEquals(3, PeriodCalculator.clampedPeriodIndex(periods, LocalDate.of(2026, 10, 1)))
+    }
+
+    @Test
+    fun testClampedPeriodIndexFollowsTheGridItIsGiven() {
+        // The same date sits in different periods depending on how the category splits the month.
+        val sixteenth = LocalDate.of(2026, 9, 16)
+
+        assertEquals(2, PeriodCalculator.clampedPeriodIndex(PeriodCalculator.periodsFor(2026, 9), sixteenth))
+        assertEquals(1, PeriodCalculator.clampedPeriodIndex(PeriodCalculator.periodsFor(2026, 9, 2), sixteenth))
+        assertEquals(1, PeriodCalculator.clampedPeriodIndex(PeriodCalculator.periodsFor(2026, 9, 3), sixteenth))
+        assertEquals(0, PeriodCalculator.clampedPeriodIndex(PeriodCalculator.periodsFor(2026, 9, 1), sixteenth))
+    }
 }

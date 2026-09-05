@@ -68,8 +68,29 @@ object PeriodCalculator {
      * Returns which period index (0-based) the [date] falls into, for a month split into
      * [periodCount] periods, or -1 if the date is outside the month.
      */
+    @Deprecated(
+        "Indexes the DATE's own month, so a transaction dated outside the summary month lands in " +
+            "an unrelated period. Use clampedPeriodIndex with the summary month's own periods.",
+        ReplaceWith("PeriodCalculator.clampedPeriodIndex(periods, date)"),
+    )
     fun periodIndexFor(date: LocalDate, periodCount: Int = DEFAULT_PERIOD_COUNT): Int {
         val periods = periodsFor(date, periodCount)
+        return periods.indexOfFirst { date in it }
+    }
+
+    /**
+     * Index of the period in [periods] containing [date], clamping to the first or last period for
+     * a date outside the month.
+     *
+     * A transaction filed under a month must land in exactly one of that month's periods, so that
+     * the period spends always add up to the month's total — a bank SMS for 31 August delivered
+     * after midnight belongs to August (spec section 17) but can still be filed under September if
+     * the month rolled over first, and dropping it would make the two totals disagree.
+     */
+    fun clampedPeriodIndex(periods: List<MonthPeriod>, date: LocalDate): Int {
+        require(periods.isNotEmpty()) { "No periods to index into" }
+        if (date.isBefore(periods.first().startDate)) return 0
+        if (date.isAfter(periods.last().endDate)) return periods.lastIndex
         return periods.indexOfFirst { date in it }
     }
 
@@ -87,5 +108,5 @@ object PeriodCalculator {
 }
 
 // Extension for readable range check
-private operator fun MonthPeriod.contains(date: LocalDate): Boolean =
+operator fun MonthPeriod.contains(date: LocalDate): Boolean =
     !date.isBefore(startDate) && !date.isAfter(endDate)

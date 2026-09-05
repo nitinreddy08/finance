@@ -1,5 +1,6 @@
 package com.budgetpace.app.di
 
+import com.budgetpace.app.core.time.LocalDateTicker
 import com.budgetpace.app.data.local.dao.*
 import com.budgetpace.app.data.repository.BudgetRepositoryImpl
 import com.budgetpace.app.data.repository.TransactionRepositoryImpl
@@ -23,7 +24,13 @@ object RepositoryModule {
         transactionDao: TransactionDao,
         carryForwardDao: CarryForwardDao
     ): BudgetRepository {
-        return BudgetRepositoryImpl(monthDao, categoryDao, transactionDao, carryForwardDao)
+        return BudgetRepositoryImpl(
+            monthDao,
+            categoryDao,
+            transactionDao,
+            carryForwardDao,
+            LocalDateTicker().dates(),
+        )
     }
 
     @Provides

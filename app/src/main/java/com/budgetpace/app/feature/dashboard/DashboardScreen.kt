@@ -33,8 +33,8 @@ import com.budgetpace.app.core.model.BudgetStatus
 import com.budgetpace.app.core.model.CategorySummary
 import com.budgetpace.app.core.model.MonthStatus
 import com.budgetpace.app.core.model.MonthSummary
+import com.budgetpace.app.core.model.OverallPeriod
 import com.budgetpace.app.core.model.PeriodStatus
-import com.budgetpace.app.core.model.PeriodSummary
 import com.budgetpace.app.core.money.Money
 import java.time.Month
 import java.time.format.TextStyle
@@ -83,8 +83,7 @@ fun DashboardScreen(
     onSelectMonth: (String?) -> Unit = {},
 ) {
     val monthName = Month.of(summary.month.month).getDisplayName(TextStyle.FULL, Locale.getDefault())
-    val currentPeriod = summary.overallPeriods.firstOrNull { it.isCurrentPeriod }
-    val overageMinor = currentPeriod?.overageMinor ?: 0L
+    val overageMinor = summary.overPaceMinor
     val pctUsed = if (summary.totalBudgetMinor > 0)
         (summary.totalSpentMinor.toFloat() / summary.totalBudgetMinor * 100).toInt().coerceAtLeast(0)
     else 0
@@ -149,7 +148,9 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.padding(bottom = 6.dp)) {
                 Text(
-                    text = "this week",
+                    // Not "this week": a category may pace itself over 2 or 3 periods, so the
+                    // figure covers whatever period each of them is currently in.
+                    text = "this period",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -246,7 +247,6 @@ fun DashboardScreen(
             // (not the summary above it) is the only part of Home that ever scrolls.
             val pacingCategories = summary.categories.filter { it.category.periodCount > 1 }
             val lumpSumCategories = summary.categories.filterNot { it.category.periodCount > 1 }
-            val currentPeriodIndex = summary.overallPeriods.firstOrNull { it.isCurrentPeriod }?.periodIndex
 
             Column(
                 modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
@@ -271,7 +271,6 @@ fun DashboardScreen(
                                 row.forEach { categorySummary ->
                                     CategoryPaceItem(
                                         summary = categorySummary,
-                                        currentPeriodIndex = currentPeriodIndex,
                                         onClick = { onCategoryClick(categorySummary.category.id.toString()) },
                                     )
                                 }
@@ -347,7 +346,7 @@ private fun statusColor(status: BudgetStatus): Color = when (status) {
 }
 
 @Composable
-private fun PaceSegment(period: PeriodSummary, fraction: Float, color: Color, modifier: Modifier = Modifier) {
+private fun PaceSegment(period: OverallPeriod, fraction: Float, color: Color, modifier: Modifier = Modifier) {
     // The bar communicates status by color+fill alone visually (spec's minimal-wording rule) —
     // this is the screen-reader-only equivalent, not a visible label.
     val statusDescription = when (period.periodStatus) {
@@ -361,7 +360,8 @@ private fun PaceSegment(period: PeriodSummary, fraction: Float, color: Color, mo
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
             .semantics {
-                contentDescription = "Period ${period.periodIndex + 1}, $statusDescription"
+                contentDescription = "Period ${period.periodIndex + 1} of 4, $statusDescription, " +
+                    "${Money.formatRupeesWhole(period.spentMinor)} spent"
             }
     ) {
         if (fraction > 0f) {
@@ -384,7 +384,7 @@ private val CATEGORY_BAR_HEIGHT = 130.dp
  * The whole grid gets one shared border around it (see the caller) rather than one per tile.
  */
 @Composable
-private fun CategoryPaceItem(summary: CategorySummary, currentPeriodIndex: Int?, onClick: () -> Unit) {
+private fun CategoryPaceItem(summary: CategorySummary, onClick: () -> Unit) {
     val pct = if (summary.category.monthlyBudgetMinor > 0)
         (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor * 100).toInt().coerceAtLeast(0)
     else 0
@@ -398,7 +398,7 @@ private fun CategoryPaceItem(summary: CategorySummary, currentPeriodIndex: Int?,
     ) {
         CategoryIcon(iconKey = summary.category.iconKey, name = summary.category.name, size = 28.dp)
         Spacer(modifier = Modifier.height(10.dp))
-        CategoryPaceSegmentedMark(summary, currentPeriodIndex)
+        CategoryPaceSegmentedMark(summary)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = Money.formatRupeesWhole(summary.totalSpentMinor),
@@ -425,7 +425,10 @@ private fun CategoryPaceItem(summary: CategorySummary, currentPeriodIndex: Int?,
  * so "which week am I in" is visible at a glance.
  */
 @Composable
-private fun CategoryPaceSegmentedMark(summary: CategorySummary, currentPeriodIndex: Int?) {
+private fun CategoryPaceSegmentedMark(summary: CategorySummary) {
+    // The category's own current period, not the month grid's: a 2-period category is in its
+    // period 1 for the whole second half of the month.
+    val currentPeriodIndex = summary.currentPeriodIndex
     val overallFraction = if (summary.category.monthlyBudgetMinor > 0)
         (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor).coerceIn(0f, 1f)
     else 0f

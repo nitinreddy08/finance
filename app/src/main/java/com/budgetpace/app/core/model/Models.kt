@@ -112,11 +112,31 @@ data class PeriodSummary(
     val days: Int get() = endDate.dayOfMonth - startDate.dayOfMonth + 1
 }
 
+/**
+ * One cell of Home's always-four overall bar. Deliberately carries no budget and no pace: once
+ * categories can each choose their own period count, a "budget for week 2 of the month" has no
+ * single meaning, and every attempt to invent one either starved a week of budget or smeared a
+ * lump sum across the month. The bar fills by total spend fraction and takes its colour from
+ * [MonthSummary.overallStatus] instead.
+ */
+data class OverallPeriod(
+    val periodIndex: Int,
+    val startDate: LocalDate,
+    val endDate: LocalDate,
+    val spentMinor: Long,
+    val periodStatus: PeriodStatus,
+    val isCurrentPeriod: Boolean,
+)
+
 data class CategorySummary(
     val category: Category,
     val periods: List<PeriodSummary>,
     val totalSpentMinor: Long,
     val overallStatus: BudgetStatus,
+    /** What the plan expected to be spent by today; a lump sum expects its whole budget from day 1. */
+    val expectedToDateMinor: Long = 0L,
+    /** Index into [periods] containing today, or null when today is outside the month. */
+    val currentPeriodIndex: Int? = null,
 ) {
     val remainingMinor: Long
         get() = (category.monthlyBudgetMinor - totalSpentMinor).coerceAtLeast(0)
@@ -127,7 +147,10 @@ data class MonthSummary(
     val totalBudgetMinor: Long,
     val totalSpentMinor: Long,
     val safeToSpendMinor: Long,
-    val overallPeriods: List<PeriodSummary>,
+    /** How far past the plan today's spending is. Exactly one of this and safeToSpend is non-zero. */
+    val overPaceMinor: Long,
+    val expectedToDateMinor: Long,
+    val overallPeriods: List<OverallPeriod>,
     val categories: List<CategorySummary>,
     val overallStatus: BudgetStatus,
 ) {
