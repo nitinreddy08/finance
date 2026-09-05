@@ -3,7 +3,9 @@ package com.budgetpace.app.domain.parser
 import com.budgetpace.app.core.model.Bank
 import com.budgetpace.app.core.model.TransactionDirection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.LocalDate
@@ -80,6 +82,51 @@ class KotakTransactionParserTest {
         assertEquals("Mangi lal", result.recipient)
         assertEquals(LocalDate.of(2026, 9, 3), result.transactionDate)
         assertEquals("624608313331", result.referenceNumber)
+    }
+
+    /** The SMS channel is primary now; the same message must parse identically from it. */
+    @Test
+    fun testKotakDebitOverSmsChannel() {
+        val body = "Sent Rs.27.00 from Kotak Bank AC X7970 to paytm.s2ebzrr@pty on 06-08-26." +
+            "UPI Ref 621859049153. Not you, https://kotak.com/KBANKT/Fraud"
+        val sms = NotificationInput("sms:AX-KOTAKB-S", "AX-KOTAKB-S", body, now)
+        val listener = NotificationInput("com.google.android.apps.messaging", "Kotak", body, now)
+
+        assertTrue(parser.canParse(sms))
+        assertEquals(parser.parse(listener), parser.parse(sms))
+    }
+
+    @Test
+    fun testCanParseRejectsUnsupportedSource() {
+        val input = NotificationInput(
+            "com.whatsapp",
+            "AX-KOTAKB-S",
+            "Sent Rs.27.00 from Kotak Bank AC X7970 to paytm.s2ebzrr@pty on 06-08-26.UPI Ref 621859049153.",
+            now
+        )
+
+        assertFalse(parser.canParse(input))
+    }
+
+    /** A sender header alone is never enough — the bank must come from the message text. */
+    @Test
+    fun testCanParseRejectsNonBankTextFromABankHeader() {
+        val input = NotificationInput("sms:AX-KOTAKB-S", "AX-KOTAKB-S", "See you at 7", now)
+
+        assertFalse(parser.canParse(input))
+    }
+
+    /** A malformed amount used to yield a HIGH-confidence zero-rupee prompt. */
+    @Test
+    fun testZeroAmountIsRejected() {
+        val input = NotificationInput(
+            "sms:AX-KOTAKB-S",
+            "AX-KOTAKB-S",
+            "Sent Rs.0.00 from Kotak Bank AC X7970 to paytm.s2ebzrr@pty on 06-08-26.UPI Ref 621859049153.",
+            now
+        )
+
+        assertNull(parser.parse(input))
     }
 
     @Test

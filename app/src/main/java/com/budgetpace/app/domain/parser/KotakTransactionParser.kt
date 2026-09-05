@@ -29,7 +29,9 @@ class KotakTransactionParser : BankTransactionParser {
     )
 
     override fun canParse(input: NotificationInput): Boolean {
-        if (input.packageName != "com.google.android.apps.messaging") return false
+        // The sender header alone is never sufficient: an SMS pseudo-package carries whatever the
+        // network put in the header, so the bank always has to come from the message text.
+        if (!MessageSources.isSupported(input.packageName)) return false
         val text = input.text ?: return false
         return text.contains("Kotak Bank", ignoreCase = true)
     }
@@ -54,6 +56,9 @@ class KotakTransactionParser : BankTransactionParser {
         try {
             val amountStr = matcher.group(1)?.replace(",", "") ?: return null
             val amountMinor = Money.rupeesToPaise(amountStr)
+            // Money.rupeesToPaise returns 0 for anything it cannot read; reporting that as a
+            // HIGH-confidence parse would post a zero-rupee categorization prompt.
+            if (amountMinor <= 0L) return null
             val accountSuffix = matcher.group(2)
             val party = matcher.group(3)
             val dateStr = matcher.group(4)
