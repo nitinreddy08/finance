@@ -1,16 +1,22 @@
 package com.budgetpace.app.data.google.auth
 
 import android.accounts.Account
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.budgetpace.app.core.security.securePrefs
+import androidx.core.content.edit
+import com.budgetpace.app.core.security.PREFS_GOOGLE_AUTHORIZATION
+import com.budgetpace.app.core.security.appPrefs
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.ClearTokenRequest
 import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.auth.api.identity.RevokeAccessRequest
 import com.google.android.gms.common.api.Scope
 import com.google.api.services.sheets.v4.SheetsScopes
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,117 +24,182 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
-sealed class AuthorizationOutcome {
-    object Authorized : AuthorizationOutcome()
-    data class NeedsConsent(val pendingIntent: PendingIntent) : AuthorizationOutcome()
-    data class Failed(val message: String) : AuthorizationOutcome()
+/** What one attempt to get a usable Sheets access token produced. */
+sealed interface TokenResult {
+
+    data class Ok(val accessToken: String) : TokenResult
+
+    /** The consent sheet must be shown; launch this with `StartIntentSenderForResult`. */
+    data class NeedsConsent(val pendingIntent: PendingIntent) : TokenResult
+
+    /** The owner backed out of the consent sheet. Never an error, never shown. */
+    data object Cancelled : TokenResult
+
+    data class Failed(val cause: Throwable?) : TokenResult
 }
 
 /**
- * Spec §7: authorization ("can the app read/write the user's Sheet?") is a distinct step from
- * sign-in ("who is the user?"), using the Google Identity Services Authorization API — this is
- * the currently-documented way to request incremental OAuth scopes on Android outside of
- * Credential Manager, which only handles identity.
+ * Spec section 7: authorization ("may the app write the owner's sheet?") is a separate step from
+ * sign-in ("who is the owner?"), using the Google Identity Services Authorization API.
  *
- * Requests `drive.file` (spec §7's "prefer drive.file over full Drive access") together with the
- * Sheets scope, since drive.file alone is not always sufficient for Sheets API value reads/writes
- * on a spreadsheet this app created — both are needed for the create-then-edit workflow §51/§52
- * require.
+ * Two facts are kept deliberately apart, because conflating them is what made the backup screen lie
+ * offline:
+ *
+ * - **Consent** is durable and is persisted. [hasConsent] is seeded synchronously from that flag, so
+ *   a screen opened with no network still says "Connected" when it is.
+ * - **The access token** is short-lived and is fetched immediately before each call. There is no
+ *   cache here on purpose: Play services already serves a valid token from its own cache without a
+ *   network round trip, and a token that has gone stale early is only detectable from the 401 the
+ *   Sheets call returns — which the caller answers with [clearCachedToken] plus one retry.
  */
 @Singleton
 class GoogleAuthorizationManager @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    companion object {
-        private val REQUESTED_SCOPES = listOf(
-            Scope("https://www.googleapis.com/auth/drive.file"),
-            Scope(SheetsScopes.SPREADSHEETS),
-        )
-        private const val KEY_WAS_AUTHORIZED = "was_authorized"
-    }
 
-    // The access token itself is never persisted (it's short-lived) — only whether consent was
-    // previously granted, so restoreIfNeeded() knows it's worth attempting a silent refresh
-    // instead of leaving the UI stuck on "not connected" after every process restart even though
-    // Google-side consent is still valid.
-    private val prefs = securePrefs(context, "google_authorization")
+    private val prefs = appPrefs(context, PREFS_GOOGLE_AUTHORIZATION)
 
-    private val _isAuthorized = MutableStateFlow(false)
-    val isAuthorized: StateFlow<Boolean> = _isAuthorized.asStateFlow()
+    private val _hasConsent = MutableStateFlow(prefs.getBoolean(KEY_HAS_CONSENT, false))
 
-    @Volatile
-    private var cachedAccessToken: String? = null
+    /** Durable "the owner connected Google Sheets", correct before any network call happens. */
+    val hasConsent: StateFlow<Boolean> = _hasConsent.asStateFlow()
 
-    fun currentAccessToken(): String? = cachedAccessToken
+    /** The account the consent was granted for, so a switch of account is visible immediately. */
+    fun consentedAccountEmail(): String? = prefs.getString(KEY_CONSENT_EMAIL, null)
 
-    /** Call once at app startup. If consent was granted in a previous session, attempts a silent
-     * refresh via [requestAuthorization] — per its own doc comment, that resolves with a fresh
-     * token and no UI when consent already exists. Does nothing if never authorized before. */
-    suspend fun restoreIfNeeded(accountEmail: String? = null) {
-        if (prefs.getBoolean(KEY_WAS_AUTHORIZED, false)) {
-            requestAuthorization(accountEmail)
+    /**
+     * Asks Play services for an access token for [accountEmail].
+     *
+     * When consent already exists this normally resolves offline-fast and without any UI, which is
+     * what makes it safe to call at the start of every sync — including from the worker.
+     */
+    suspend fun getFreshAccessToken(accountEmail: String?): TokenResult {
+        val builder = AuthorizationRequest.builder().setRequestedScopes(REQUESTED_SCOPES)
+        if (!accountEmail.isNullOrBlank()) {
+            // Pins the request to the signed-in account; without it the consent sheet offers its
+            // own account picker and could authorize a different Google account than the one the
+            // rest of the app believes it is backing up to.
+            builder.setAccount(Account(accountEmail, GOOGLE_ACCOUNT_TYPE))
+        }
+        return try {
+            val result = Identity.getAuthorizationClient(context)
+                .authorize(builder.build())
+                .await()
+            if (result.hasResolution()) {
+                val pendingIntent = result.pendingIntent
+                    ?: return TokenResult.Failed(IllegalStateException("resolution without PendingIntent"))
+                // Consent is deliberately not recorded here: it is granted only once the owner
+                // comes back through onConsentResult with RESULT_OK.
+                TokenResult.NeedsConsent(pendingIntent)
+            } else {
+                val token = result.accessToken
+                    ?: return TokenResult.Failed(IllegalStateException("authorized without a token"))
+                rememberConsent(accountEmail)
+                TokenResult.Ok(token)
+            }
+        } catch (e: CancellationException) {
+            // Structured cancellation of the calling scope, not a Google outcome.
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "authorize failed: ${e.javaClass.simpleName}", e)
+            TokenResult.Failed(e)
         }
     }
 
     /**
-     * Call this to (re)authorize. If consent was already granted previously, this typically
-     * resolves to [AuthorizationOutcome.Authorized] directly with a fresh token and no UI —
-     * that also makes it the right call to refresh a token from a background worker. Only the
-     * very first grant (or one that was revoked) surfaces [AuthorizationOutcome.NeedsConsent],
-     * whose PendingIntent the caller must launch via
-     * ActivityResultContracts.StartIntentSenderForResult and feed the result back into
-     * [handleAuthorizationResult].
+     * Feed the ActivityResult of the launched consent PendingIntent back in here.
      *
-     * [accountEmail], when known (the already-signed-in Google account), ties this request to
-     * that exact account so the consent screen doesn't offer an independent account picker that
-     * could end up authorizing a *different* Google account than the one signed in with.
+     * Cancellation is decided by [resultCode] alone. Play services reports a dismissed consent
+     * sheet through several different exception shapes and status numbers depending on version, so
+     * inferring "the owner backed out" from an exception is how the app ended up showing a scary
+     * error for a deliberate choice.
      */
-    suspend fun requestAuthorization(accountEmail: String? = null): AuthorizationOutcome {
-        val requestBuilder = AuthorizationRequest.builder()
-            .setRequestedScopes(REQUESTED_SCOPES)
-        if (!accountEmail.isNullOrBlank()) {
-            requestBuilder.setAccount(Account(accountEmail, "com.google"))
-        }
-        val request = requestBuilder.build()
-        return try {
-            val result = Identity.getAuthorizationClient(context).authorize(request).await()
-            if (result.hasResolution()) {
-                val pendingIntent = result.pendingIntent
-                    ?: return AuthorizationOutcome.Failed("No consent screen available")
-                AuthorizationOutcome.NeedsConsent(pendingIntent)
-            } else {
-                cachedAccessToken = result.accessToken
-                _isAuthorized.value = true
-                prefs.edit().putBoolean(KEY_WAS_AUTHORIZED, true).apply()
-                AuthorizationOutcome.Authorized
-            }
-        } catch (e: Exception) {
-            // Never shown raw to the user (spec §61) — but this is the only way to diagnose a
-            // Google Cloud Console misconfiguration (wrong client type, SHA-1 not registered,
-            // Sheets/Drive API not enabled, consent screen in Testing without this account added)
-            // from a real device's logcat.
-            Log.e("GoogleAuth", "requestAuthorization failed: ${e.javaClass.simpleName}: ${e.message}", e)
-            AuthorizationOutcome.Failed(e.message ?: "Authorization failed")
-        }
-    }
-
-    /** Feed the [Intent] from the launched consent PendingIntent's ActivityResult back in here. */
-    fun handleAuthorizationResult(data: Intent?): AuthorizationOutcome {
+    fun onConsentResult(resultCode: Int, data: Intent?, accountEmail: String?): TokenResult {
+        if (resultCode != Activity.RESULT_OK) return TokenResult.Cancelled
         return try {
             val result = Identity.getAuthorizationClient(context).getAuthorizationResultFromIntent(data)
-            cachedAccessToken = result.accessToken
-            _isAuthorized.value = true
-            prefs.edit().putBoolean(KEY_WAS_AUTHORIZED, true).apply()
-            AuthorizationOutcome.Authorized
+            val token = result.accessToken
+                ?: return TokenResult.Failed(IllegalStateException("consent returned no token"))
+            rememberConsent(accountEmail)
+            TokenResult.Ok(token)
         } catch (e: Exception) {
-            Log.e("GoogleAuth", "handleAuthorizationResult failed: ${e.javaClass.simpleName}: ${e.message}", e)
-            AuthorizationOutcome.Failed(e.message ?: "Authorization failed")
+            Log.e(TAG, "consent result failed: ${e.javaClass.simpleName}", e)
+            TokenResult.Failed(e)
         }
     }
 
-    fun clear() {
-        cachedAccessToken = null
-        _isAuthorized.value = false
-        prefs.edit().putBoolean(KEY_WAS_AUTHORIZED, false).apply()
+    /**
+     * Drops a token Play services still believes is good. The only way to learn that is a 401 from
+     * the API itself, so this is always followed by exactly one retry.
+     */
+    suspend fun clearCachedToken(accessToken: String) {
+        try {
+            Identity.getAuthorizationClient(context)
+                .clearToken(ClearTokenRequest.builder().setToken(accessToken).build())
+                .await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Best effort: the retry re-authorizes anyway, and failing here must not fail the sync.
+            Log.w(TAG, "clearToken failed: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Disconnect. Revoking is best effort — the local state must end up disconnected whether or not
+     * Google could be reached, or "Disconnect" would appear to do nothing offline.
+     */
+    suspend fun revokeAndClear(accountEmail: String?) {
+        if (!accountEmail.isNullOrBlank()) {
+            try {
+                Identity.getAuthorizationClient(context)
+                    .revokeAccess(
+                        RevokeAccessRequest.builder()
+                            .setAccount(Account(accountEmail, GOOGLE_ACCOUNT_TYPE))
+                            .setScopes(REQUESTED_SCOPES)
+                            .build()
+                    )
+                    .await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "revokeAccess failed: ${e.javaClass.simpleName}")
+            }
+        }
+        forgetConsent()
+    }
+
+    fun forgetConsent() {
+        prefs.edit {
+            putBoolean(KEY_HAS_CONSENT, false)
+            remove(KEY_CONSENT_EMAIL)
+        }
+        _hasConsent.value = false
+    }
+
+    private fun rememberConsent(accountEmail: String?) {
+        prefs.edit {
+            putBoolean(KEY_HAS_CONSENT, true)
+            if (!accountEmail.isNullOrBlank()) putString(KEY_CONSENT_EMAIL, accountEmail)
+        }
+        _hasConsent.value = true
+    }
+
+    companion object {
+        private const val TAG = "GoogleAuth"
+        private const val KEY_HAS_CONSENT = "has_consent"
+        private const val KEY_CONSENT_EMAIL = "consent_email"
+        private const val GOOGLE_ACCOUNT_TYPE = "com.google"
+
+        /**
+         * Both scopes on purpose: `drive.file` is what spec section 7 asks for (access limited to
+         * files this app created), and the Sheets scope is what the values endpoints need on that
+         * file. This is the pair the owner's current install already works with; narrowing it would
+         * force a fresh consent screen for no gain in a personal app.
+         */
+        private val REQUESTED_SCOPES: List<Scope> = listOf(
+            Scope("https://www.googleapis.com/auth/drive.file"),
+            Scope(SheetsScopes.SPREADSHEETS),
+        )
     }
 }

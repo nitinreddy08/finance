@@ -5,7 +5,8 @@ import android.util.Log
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.CustomCredential
-import com.budgetpace.app.core.security.securePrefs
+import com.budgetpace.app.core.security.PREFS_AUTH_SESSION
+import com.budgetpace.app.core.security.appPrefs
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.budgetpace.app.domain.auth.AuthRepository
@@ -27,7 +28,7 @@ class AuthRepositoryImpl @Inject constructor(
     // Only email/display name are persisted, encrypted — not the ID token itself, which is
     // short-lived and shouldn't be stored long-term. refreshSessionSilently() hydrates a real
     // token behind a restored session without the user seeing any UI for it.
-    private val prefs = securePrefs(context, "auth_session")
+    private val prefs = appPrefs(context, PREFS_AUTH_SESSION)
 
     private val _currentSession = MutableStateFlow(restoreSession())
     override val currentSession: StateFlow<UserSession?> = _currentSession.asStateFlow()

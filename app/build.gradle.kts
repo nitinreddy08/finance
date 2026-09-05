@@ -107,6 +107,12 @@ android {
     }
 }
 
+// Room writes the schema here so a future version can ship a verified Migration instead of
+// destroying the owner's only copy of their expense history.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     // Desugaring for java.time on older APIs
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")

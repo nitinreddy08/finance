@@ -1,149 +1,113 @@
 package com.budgetpace.app.notification.listener
 
+import android.app.Notification
+import android.content.ComponentName
+import android.os.Build
+import android.provider.Telephony
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
-import com.budgetpace.app.core.model.ParseConfidence
-import com.budgetpace.app.core.model.RecordDecision
-import com.budgetpace.app.core.model.SyncState
-import com.budgetpace.app.core.model.Transaction
-import com.budgetpace.app.core.model.TransactionDirection
-import com.budgetpace.app.data.local.dao.CategoryDao
-import com.budgetpace.app.data.local.dao.TransactionDao
-import com.budgetpace.app.data.local.mapper.toDomain
-import com.budgetpace.app.data.local.mapper.toEntity
-import com.budgetpace.app.domain.duplicate.DuplicateDetector
+import com.budgetpace.app.domain.ingestion.IngestionChannel
+import com.budgetpace.app.domain.parser.MessageSources
 import com.budgetpace.app.domain.parser.NotificationInput
-import com.budgetpace.app.domain.parser.ParserCoordinator
-import com.budgetpace.app.domain.usecase.EnsureActiveMonthUseCase
-import com.budgetpace.app.notification.presenter.CategorizationNotificationManager
+import com.budgetpace.app.ingestion.DetectionDiagnostics
+import com.budgetpace.app.ingestion.TransactionIngestor
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import java.time.Instant
-import java.time.ZoneId
-import java.util.UUID
 import javax.inject.Inject
 
 /**
- * Spec §11: the single dedicated NotificationListenerService for the whole app. Receives a
- * posted Google Messages notification, parses it, de-duplicates it, saves it, and — for a debit
- * awaiting categorization — shows the categorization notification (spec §21).
+ * Fallback capture path (plan section 1.6). [BankSmsReceiver][com.budgetpace.app.sms.BankSmsReceiver]
+ * is primary; this exists for the messages it misses, and because Android 15 may redact the very
+ * text this service would otherwise read. Everything past "which text did the notification carry"
+ * is shared with the SMS path through [TransactionIngestor].
  */
 @AndroidEntryPoint
 class SmsNotificationListenerService : NotificationListenerService() {
 
-    @Inject lateinit var parserCoordinator: ParserCoordinator
-    @Inject lateinit var transactionDao: TransactionDao
-    @Inject lateinit var categoryDao: CategoryDao
-    @Inject lateinit var ensureActiveMonth: EnsureActiveMonthUseCase
-    @Inject lateinit var categorizationNotificationManager: CategorizationNotificationManager
+    @Inject lateinit var ingestor: TransactionIngestor
+    @Inject lateinit var diagnostics: DetectionDiagnostics
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        diagnostics.recordListenerConnected()
+        // A message posted while the listener was disconnected (rebinding after a crash or an
+        // update) is otherwise never seen at all, since onNotificationPosted only fires for what
+        // arrives after connection.
+        runCatching {
+            activeNotifications
+                ?.filter { isSupportedSource(it.packageName) }
+                ?.forEach { handle(it) }
+        }.onFailure { Log.e(TAG, "Backfill from active notifications failed", it) }
+    }
 
-    private val googleMessagesPackage = "com.google.android.apps.messaging"
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        diagnostics.recordListenerDisconnected()
+        requestRebind(ComponentName(this, SmsNotificationListenerService::class.java))
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
         if (sbn == null) return
-        if (sbn.packageName != googleMessagesPackage) {
-            // Quietly ignored by design for every other app's notifications — logged at a level
-            // that only shows up if explicitly asked for, so this doesn't spam logcat with every
-            // unrelated notification on the device while still being answerable ("what package
-            // was that message actually from?") without guessing from a screenshot.
-            Log.v("SmsListener", "Ignoring notification from ${sbn.packageName} (not $googleMessagesPackage)")
-            return
+        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        if (!isSupportedSource(sbn.packageName)) return
+        handle(sbn)
+    }
+
+    private fun handle(sbn: StatusBarNotification) {
+        try {
+            val text = extractText(sbn.notification)
+            val input = NotificationInput(
+                packageName = sbn.packageName,
+                title = sbn.notification.extras.getString(Notification.EXTRA_TITLE),
+                text = text,
+                receivedAt = Instant.ofEpochMilli(sbn.postTime),
+            )
+            // Fire-and-forget into the ingestor's own application-lifetime scope: both
+            // onNotificationPosted and onListenerConnected run on the main thread, and this
+            // service can be torn down by the system at any moment, so nothing here may block
+            // waiting for the DB write to finish.
+            ingestor.submit(input, IngestionChannel.LISTENER)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Failed to process notification from ${sbn.packageName}", error)
         }
+    }
 
-        val extras = sbn.notification.extras
-        val text = extras.getCharSequence("android.bigText")?.toString()
-            ?: extras.getCharSequence("android.text")?.toString()
-        if (text.isNullOrBlank()) {
-            Log.d("SmsListener", "Messaging notification had no text to parse")
-            return
-        }
+    private fun isSupportedSource(packageName: String): Boolean =
+        packageName == MessageSources.GOOGLE_MESSAGES || packageName == defaultSmsPackage()
 
-        val input = NotificationInput(
-            packageName = sbn.packageName,
-            title = extras.getString("android.title"),
-            text = text,
-            receivedAt = Instant.ofEpochMilli(sbn.postTime)
-        )
+    private fun defaultSmsPackage(): String? =
+        runCatching { Telephony.Sms.getDefaultSmsPackage(this) }.getOrNull()
 
-        // Spec §14: only high-confidence parses become transactions/prompts.
-        val parsed = parserCoordinator.parse(input)
-        if (parsed == null) {
-            Log.d("SmsListener", "No parser matched this message: $text")
-            return
-        }
-        if (parsed.confidence != ParseConfidence.HIGH) {
-            Log.d("SmsListener", "Parsed with non-HIGH confidence (${parsed.confidence}), dropping: $text")
-            return
-        }
+    /**
+     * Order matters: a messaging app's own MessagingStyle carries the truest per-message text;
+     * `EXTRA_TEXT_LINES` is the multi-line summary some apps post instead; the single-line extras
+     * are the last resort. Android 15's redaction (see [com.budgetpace.app.domain.ingestion.
+     * IngestionPolicy.REDACTION_MARKER]) can replace any of these, which the shared ingestion
+     * policy detects afterwards — extraction does not need to know about it.
+     */
+    private fun extractText(notification: Notification): String? {
+        val extras = notification.extras
 
-        serviceScope.launch {
-            try {
-                val duplicateKey = DuplicateDetector.getDuplicateKey(parsed)
+        val messagingText = runCatching {
+            @Suppress("DEPRECATION")
+            val parcelables = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+            Notification.MessagingStyle.Message.getMessagesFromBundleArray(parcelables)
+        }.getOrNull()?.lastOrNull()?.text?.toString()
+        if (!messagingText.isNullOrBlank()) return messagingText
 
-                // Spec §19: bank+reference is authoritative when present, otherwise fall back to
-                // the fingerprint. Either way, check BEFORE inserting so a redelivered
-                // notification never creates a second transaction or a second prompt.
-                val existing = parsed.referenceNumber?.let {
-                    transactionDao.findByBankRef(parsed.bank.name, it)
-                } ?: transactionDao.findByDuplicateKey(duplicateKey)
-                if (existing != null) {
-                    Log.d("SmsListener", "Duplicate of an already-recorded transaction, skipping: ref=${parsed.referenceNumber}")
-                    return@launch
-                }
+        val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+        val lastLine = lines?.lastOrNull()?.toString()
+        if (!lastLine.isNullOrBlank()) return lastLine
 
-                val activeMonth = ensureActiveMonth()
-                val now = Instant.now()
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+        if (!bigText.isNullOrBlank()) return bigText
 
-                // Spec §9: credits are not spending and don't need categorization — record them
-                // for the ledger but never prompt.
-                val isCredit = parsed.direction == TransactionDirection.CREDIT
+        return extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+    }
 
-                val transaction = Transaction(
-                    id = UUID.randomUUID(),
-                    monthId = activeMonth.id,
-                    amountMinor = parsed.amountMinor,
-                    currency = "INR",
-                    direction = parsed.direction,
-                    categoryId = null,
-                    transactionDateTime = parsed.transactionDateTime,
-                    transactionDate = parsed.transactionDate
-                        ?: input.receivedAt.atZone(ZoneId.systemDefault()).toLocalDate(),
-                    notificationReceivedAt = input.receivedAt,
-                    bank = parsed.bank,
-                    accountSuffix = parsed.accountSuffix,
-                    recipient = parsed.recipient,
-                    sender = parsed.sender,
-                    referenceNumber = parsed.referenceNumber,
-                    sourcePackage = sbn.packageName,
-                    sourceSender = input.title,
-                    sourceMessageHash = text.hashCode().toString(),
-                    duplicateKey = duplicateKey,
-                    recordDecision = RecordDecision.RECORDED,
-                    syncState = SyncState.PENDING,
-                    parserVersion = "1.0",
-                    createdAt = now,
-                    updatedAt = now,
-                )
-
-                transactionDao.insert(transaction.toEntity())
-                Log.i("SmsListener", "Recorded ${parsed.direction} of ${parsed.amountMinor} paise (${parsed.bank}, ref=${parsed.referenceNumber})")
-
-                if (!isCredit) {
-                    val quickCategories = categoryDao.getByMonth(activeMonth.id.toString())
-                        .filter { it.active }
-                        .map { it.toDomain() }
-                    categorizationNotificationManager.showPrompt(transaction, quickCategories)
-                }
-            } catch (e: Exception) {
-                Log.e("SmsListener", "Failed to process notification", e)
-            }
-        }
+    private companion object {
+        const val TAG = "SmsListener"
     }
 }

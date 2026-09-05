@@ -16,9 +16,10 @@ import com.budgetpace.app.data.local.entity.*
         DeletedTransactionEntity::class,
     ],
     version = 3,
-    // No room.schemaLocation is configured (and nothing consumes exported schema files yet),
-    // so exporting just produces the "schema export directory was not provided" build warning.
-    exportSchema = false,
+    // Exported to app/schemas via the room.schemaLocation KSP argument. Room needs the previous
+    // schema on disk to generate and verify a real Migration, so the next schema change cannot be
+    // written safely until version 3 has been committed there.
+    exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
 
@@ -38,10 +39,11 @@ abstract class BudgetDatabase : RoomDatabase() {
 
         private fun buildDatabase(context: Context) =
             Room.databaseBuilder(context, BudgetDatabase::class.java, "budget_pace.db")
-                // V1 has not shipped to any real install yet and ships no Migrations;
-                // destructive fallback avoids crashing pre-release testers on schema
-                // changes. Replace with real Migrations before the first real release.
-                .fallbackToDestructiveMigration()
+                // Only from the two pre-release versions. A blanket fallbackToDestructiveMigration
+                // would silently erase every expense the owner has recorded the first time a
+                // future version ships without a Migration — on a phone that is the only copy of
+                // that data. Failing the open is loud, recoverable, and the safer default.
+                .fallbackToDestructiveMigrationFrom(1, 2)
                 .build()
     }
 }
