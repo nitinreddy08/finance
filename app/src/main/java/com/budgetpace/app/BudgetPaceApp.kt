@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import androidx.work.WorkManager
+import com.budgetpace.app.data.sync.SyncTriggerImpl
 import com.budgetpace.app.notification.presenter.CategorizationNotificationManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -19,6 +20,12 @@ class BudgetPaceApp : Application(), Configuration.Provider {
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
+    // Injected as the concrete type, not the SyncTrigger seam interface: only this app-start call
+    // site is meant to invoke start() (spec §54's pending-count watcher + keeping the daily job in
+    // step with Sheets consent) — ingestion code only ever sees requestSyncSoon() via the interface.
+    @Inject
+    lateinit var syncTrigger: SyncTriggerImpl
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -31,6 +38,8 @@ class BudgetPaceApp : Application(), Configuration.Provider {
         // that reason. Initialize it manually here instead, now that workerFactory is set.
         WorkManager.initialize(this, workManagerConfiguration)
         createCategorizationChannel()
+        // Must run after WorkManager.initialize() above: start() may end up enqueueing work.
+        syncTrigger.start()
     }
 
     private fun createCategorizationChannel() {

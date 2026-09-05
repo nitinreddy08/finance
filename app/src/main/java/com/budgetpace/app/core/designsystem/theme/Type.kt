@@ -37,10 +37,10 @@ val BudgetPaceTypography = Typography(
         lineHeight = 28.sp,
         letterSpacing = 0.sp,
     ),
-    // Section labels (e.g. "OVERALL PACE", "CATEGORIES")
+    // Section labels (e.g. "OVERALL PACE", "CATEGORIES"). Never below 12sp (spec §37).
     titleSmall = TextStyle(
         fontWeight = FontWeight.Medium,
-        fontSize   = 11.sp,
+        fontSize   = 12.sp,
         lineHeight = 16.sp,
         letterSpacing = 1.2.sp,
     ),
@@ -57,12 +57,12 @@ val BudgetPaceTypography = Typography(
         lineHeight = 20.sp,
         letterSpacing = 0.sp,
     ),
-    // Metadata: bank info, timestamps, status labels
+    // Metadata: bank info, timestamps, status labels. Never below 12sp (spec §37).
     labelSmall = TextStyle(
         fontWeight = FontWeight.Medium,
-        fontSize   = 11.sp,
+        fontSize   = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.5.sp,
+        letterSpacing = 0.4.sp,
     ),
     labelMedium = TextStyle(
         fontWeight = FontWeight.Medium,

@@ -1,5 +1,8 @@
 package com.budgetpace.app.feature.dashboard
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,7 +12,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Sms
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,13 +25,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budgetpace.app.core.designsystem.components.CategoryIcon
+import com.budgetpace.app.core.designsystem.statusColor
 import com.budgetpace.app.core.designsystem.theme.bpColors
 import com.budgetpace.app.core.model.BudgetMonth
 import com.budgetpace.app.core.model.BudgetStatus
@@ -34,8 +41,8 @@ import com.budgetpace.app.core.model.CategorySummary
 import com.budgetpace.app.core.model.MonthStatus
 import com.budgetpace.app.core.model.MonthSummary
 import com.budgetpace.app.core.model.OverallPeriod
-import com.budgetpace.app.core.model.PeriodStatus
 import com.budgetpace.app.core.money.Money
+import com.budgetpace.app.feature.detection.DetectionStatusChecker
 import java.time.Month
 import java.time.format.TextStyle
 import java.util.Locale
@@ -43,28 +50,40 @@ import java.util.Locale
 @Composable
 fun DashboardRoute(
     viewModel: DashboardViewModel,
-    onCategoryClick: (String) -> Unit,
+    onCategoryClick: (monthId: String, categoryId: String) -> Unit,
+    onOpenDetectionHealth: () -> Unit = {},
+    onOpenUncategorized: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val availableMonths by viewModel.availableMonths.collectAsStateWithLifecycle()
+    val uncategorizedCount by viewModel.uncategorizedCount.collectAsStateWithLifecycle()
 
-    when (val state = uiState) {
-        is DashboardUiState.Loading -> {
-            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color(0xFF4CAF50))
+    androidx.compose.animation.Crossfade(targetState = uiState, label = "dashboard") { state ->
+        when (state) {
+            is DashboardUiState.Loading -> {
+                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.bpColors.statusGreen)
+                }
             }
-        }
-        is DashboardUiState.Success -> {
-            DashboardScreen(
-                summary = state.summary,
-                availableMonths = availableMonths,
-                onCategoryClick = onCategoryClick,
-                onSelectMonth = viewModel::selectMonth,
-            )
-        }
-        is DashboardUiState.Error -> {
-            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-                Text("Error loading dashboard", color = MaterialTheme.colorScheme.onBackground)
+            is DashboardUiState.Success -> {
+                DashboardScreen(
+                    summary = state.summary,
+                    availableMonths = availableMonths,
+                    uncategorizedCount = uncategorizedCount,
+                    onCategoryClick = { categoryId -> onCategoryClick(state.summary.month.id.toString(), categoryId) },
+                    onSelectMonth = viewModel::selectMonth,
+                    onOpenDetectionHealth = onOpenDetectionHealth,
+                    onOpenUncategorized = onOpenUncategorized,
+                )
+            }
+            is DashboardUiState.NoMonth -> {
+                Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Setting things up…",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -72,24 +91,36 @@ fun DashboardRoute(
 
 /**
  * Spec §5 "HOME — FINAL": the most important screen, and it must never scroll. The summary
- * section (header, Safe-to-spend, pace bar) is fixed; only the Category Pace grid below it may
- * scroll internally, and only once there are more categories than fit on screen.
+ * section (header, hero figure, pace bar, nudge rows) is fixed; only the Category Pace grid below
+ * it may scroll internally, and only once there are more categories than fit on screen.
  */
 @Composable
 fun DashboardScreen(
     summary: MonthSummary,
     availableMonths: List<BudgetMonth> = emptyList(),
+    uncategorizedCount: Int = 0,
     onCategoryClick: (String) -> Unit = {},
     onSelectMonth: (String?) -> Unit = {},
+    onOpenDetectionHealth: () -> Unit = {},
+    onOpenUncategorized: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     val monthName = Month.of(summary.month.month).getDisplayName(TextStyle.FULL, Locale.getDefault())
-    val overageMinor = summary.overPaceMinor
+    val isArchived = summary.month.status == MonthStatus.ARCHIVED
     val pctUsed = if (summary.totalBudgetMinor > 0)
         (summary.totalSpentMinor.toFloat() / summary.totalBudgetMinor * 100).toInt().coerceAtLeast(0)
     else 0
-    val hasSpending = summary.totalSpentMinor > 0
     var showMonthPicker by remember { mutableStateOf(false) }
     var showMoreCategories by remember { mutableStateOf(false) }
+
+    // Bank-detection nudge: re-read live permission state whenever Home comes back to the
+    // foreground (e.g. returning from Detection health), same pattern Settings already uses.
+    var needsDetectionSetup by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        val status = DetectionStatusChecker.currentStatus(context)
+        needsDetectionSetup = !status.smsPermissionGranted && !status.listenerEnabled
+        onPauseOrDispose {}
+    }
 
     if (showMonthPicker) {
         MonthPickerDialog(
@@ -117,7 +148,7 @@ fun DashboardScreen(
         ) {
             Text(
                 text = "$monthName ${summary.month.year}",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Icon(
@@ -128,41 +159,39 @@ fun DashboardScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Safe to spend — the dominant element on the screen. "this week"/"over pace" sit beside
-        // the number rather than stacked under it, to leave more vertical room for Category Pace.
-        Text(
-            text = "SAFE TO SPEND",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = Money.formatRupeesWhole(summary.safeToSpendMinor),
-                style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold, fontSize = 40.sp),
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.padding(bottom = 6.dp)) {
+        if (isArchived) {
+            val currentMonthLabel = availableMonths.firstOrNull { it.status == MonthStatus.ACTIVE }?.let {
+                Month.of(it.month).getDisplayName(TextStyle.FULL, Locale.getDefault())
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .clickable { onSelectMonth(null) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    // Not "this week": a category may pace itself over 2 or 3 periods, so the
-                    // figure covers whatever period each of them is currently in.
-                    text = "this period",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = if (currentMonthLabel != null) "Past month · Back to $currentMonthLabel" else "Past month",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (overageMinor > 0) {
-                    Text(
-                        text = "${Money.formatRupeesWhole(overageMinor)} over pace",
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = Color(0xFFF44336)
-                    )
-                }
             }
         }
+
+        AnimatedVisibility(visible = needsDetectionSetup && !isArchived) {
+            NudgeRow(
+                text = "Turn on bank detection to record expenses automatically",
+                icon = Icons.Outlined.Sms,
+                onClick = onOpenDetectionHealth,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        HeroFigure(summary = summary, isArchived = isArchived)
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -184,57 +213,39 @@ fun DashboardScreen(
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "$pctUsed% used",
+            text = "$pctUsed% used · ${statusWord(summary.overallStatus)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Four-segment pace bar — a continuous fill across the segments by how much of the
-        // TOTAL month's budget has been spent (e.g. 81% used fills into period 3/4, not just
-        // period 1), colored by the month's overall elapsed-time-adjusted pace status. Spec §5:
-        // color communicates status, no "Week"/status words.
-        val overallFraction = if (summary.totalBudgetMinor > 0)
-            (summary.totalSpentMinor.toFloat() / summary.totalBudgetMinor).coerceIn(0f, 1f)
-        else 0f
-        val overallColor = statusColor(summary.overallStatus)
-        val segmentCount = summary.overallPeriods.size.coerceAtLeast(1)
-        Row(
-            modifier = Modifier.fillMaxWidth().height(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            summary.overallPeriods.forEach { period ->
-                val cellFraction = (overallFraction * segmentCount - period.periodIndex).coerceIn(0f, 1f)
-                PaceSegment(
-                    period = period,
-                    fraction = cellFraction,
-                    color = overallColor,
-                    modifier = Modifier.weight(1f).fillMaxHeight()
-                )
-            }
+        OverallPaceBar(summary = summary, pctUsed = pctUsed)
+
+        if (uncategorizedCount > 0) {
+            Spacer(modifier = Modifier.height(10.dp))
+            UncategorizedRow(count = uncategorizedCount, onClick = onOpenUncategorized)
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         Text(
             text = "CATEGORY PACE",
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (summary.categories.isEmpty() || !hasSpending) {
+        if (summary.categories.isEmpty()) {
             Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "No spending yet",
+                        text = "No categories yet",
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Your bank expenses will appear here automatically.",
+                        text = "Add a category to start tracking your pace.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -257,24 +268,23 @@ fun DashboardScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
-                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         // 4 per row, wrapping to further rows — one border frames the whole grid
-                        // rather than each tile individually.
+                        // rather than each tile individually. Each tile takes an even 1/4 share of
+                        // the row's width (not a fixed 76dp, which overflows a 360dp phone).
                         pacingCategories.chunked(4).forEach { row ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
+                            Row(modifier = Modifier.fillMaxWidth()) {
                                 row.forEach { categorySummary ->
                                     CategoryPaceItem(
                                         summary = categorySummary,
+                                        modifier = Modifier.weight(1f),
                                         onClick = { onCategoryClick(categorySummary.category.id.toString()) },
                                     )
                                 }
-                                repeat(4 - row.size) { Spacer(modifier = Modifier.width(76.dp)) }
+                                repeat(4 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
                             }
                         }
                     }
@@ -294,6 +304,142 @@ fun DashboardScreen(
     }
 }
 
+private fun statusWord(status: BudgetStatus): String = when (status) {
+    BudgetStatus.GREEN -> "on track"
+    BudgetStatus.ORANGE -> "a bit over"
+    BudgetStatus.RED -> "over budget"
+    BudgetStatus.GREY -> "not started"
+    BudgetStatus.CURRENT -> "on track"
+}
+
+@Composable
+private fun HeroFigure(summary: MonthSummary, isArchived: Boolean) {
+    if (isArchived) {
+        val overageMinor = (summary.totalSpentMinor - summary.totalBudgetMinor).coerceAtLeast(0)
+        val isOver = overageMinor > 0
+        Text(
+            text = if (isOver) "OVER BY" else "REMAINING",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = Money.formatRupeesWhole(if (isOver) overageMinor else summary.remainingMinor),
+            style = MaterialTheme.typography.displayMedium,
+            color = if (isOver) MaterialTheme.bpColors.danger else MaterialTheme.colorScheme.onBackground,
+        )
+        return
+    }
+
+    val overPaceMinor = summary.overPaceMinor
+    val isOverPace = overPaceMinor > 0
+    Text(
+        text = if (isOverPace) "OVER PACE" else "SAFE TO SPEND",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            text = Money.formatRupeesWhole(if (isOverPace) overPaceMinor else summary.safeToSpendMinor),
+            style = MaterialTheme.typography.displayMedium,
+            color = if (isOverPace) MaterialTheme.bpColors.danger else MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            // Not "this week": a category may pace itself over 2 or 3 periods, so the figure
+            // covers whatever period each of them is currently in.
+            text = "this period",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun NudgeRow(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun UncategorizedRow(count: Int, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 6.dp)
+            .semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (count == 1) "1 expense needs a category" else "$count expenses need a category",
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+            color = MaterialTheme.bpColors.statusOrange,
+        )
+        Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.bpColors.statusOrange)
+    }
+}
+
+@Composable
+private fun OverallPaceBar(summary: MonthSummary, pctUsed: Int) {
+    // A continuous fill across the segments by how much of the TOTAL month's budget has been
+    // spent (e.g. 81% used fills into period 3/4, not just period 1), colored by the month's
+    // overall elapsed-time-adjusted pace status. Spec §5: color communicates status, no
+    // "Week"/status words drawn on the bar itself.
+    val overallFraction = if (summary.totalBudgetMinor > 0)
+        (summary.totalSpentMinor.toFloat() / summary.totalBudgetMinor).coerceIn(0f, 1f)
+    else 0f
+    val overallColor = statusColor(summary.overallStatus)
+    val segmentCount = summary.overallPeriods.size.coerceAtLeast(1)
+    val currentIndex = summary.overallPeriods.firstOrNull { it.isCurrentPeriod }?.periodIndex
+    val periodWord = if (currentIndex != null) "period ${currentIndex + 1} of $segmentCount, " else ""
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(8.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Overall pace, $periodWord$pctUsed% used, ${statusWord(summary.overallStatus)}"
+            },
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        summary.overallPeriods.forEach { period ->
+            val targetFraction = (overallFraction * segmentCount - period.periodIndex).coerceIn(0f, 1f)
+            val animatedFraction by animateFloatAsState(targetValue = targetFraction, animationSpec = tween(200), label = "pace")
+            PaceSegment(
+                fraction = animatedFraction,
+                color = overallColor,
+                modifier = Modifier.weight(1f).fillMaxHeight()
+            )
+        }
+    }
+}
+
 @Composable
 private fun MonthPickerDialog(
     months: List<BudgetMonth>,
@@ -309,7 +455,11 @@ private fun MonthPickerDialog(
             if (months.isEmpty()) {
                 Text("No months yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                     // Daos.observeAll() already orders newest-first.
                     months.forEach { m ->
                         val label = Month.of(m.month).getDisplayName(TextStyle.FULL, Locale.getDefault()) + " ${m.year}"
@@ -337,32 +487,11 @@ private fun MonthPickerDialog(
 }
 
 @Composable
-private fun statusColor(status: BudgetStatus): Color = when (status) {
-    BudgetStatus.GREEN -> MaterialTheme.bpColors.statusGreen
-    BudgetStatus.ORANGE -> MaterialTheme.bpColors.statusOrange
-    BudgetStatus.RED -> MaterialTheme.bpColors.statusRed
-    BudgetStatus.GREY -> MaterialTheme.colorScheme.outline
-    BudgetStatus.CURRENT -> MaterialTheme.bpColors.statusBlue
-}
-
-@Composable
-private fun PaceSegment(period: OverallPeriod, fraction: Float, color: Color, modifier: Modifier = Modifier) {
-    // The bar communicates status by color+fill alone visually (spec's minimal-wording rule) —
-    // this is the screen-reader-only equivalent, not a visible label.
-    val statusDescription = when (period.periodStatus) {
-        PeriodStatus.UPCOMING -> "upcoming"
-        PeriodStatus.CURRENT -> "current"
-        PeriodStatus.COMPLETED -> "completed"
-    }
-
+private fun PaceSegment(fraction: Float, color: Color, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
-            .semantics {
-                contentDescription = "Period ${period.periodIndex + 1} of 4, $statusDescription, " +
-                    "${Money.formatRupeesWhole(period.spentMinor)} spent"
-            }
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
     ) {
         if (fraction > 0f) {
             Box(
@@ -384,14 +513,13 @@ private val CATEGORY_BAR_HEIGHT = 130.dp
  * The whole grid gets one shared border around it (see the caller) rather than one per tile.
  */
 @Composable
-private fun CategoryPaceItem(summary: CategorySummary, onClick: () -> Unit) {
+private fun CategoryPaceItem(summary: CategorySummary, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val pct = if (summary.category.monthlyBudgetMinor > 0)
         (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor * 100).toInt().coerceAtLeast(0)
     else 0
 
     Column(
-        modifier = Modifier
-            .width(76.dp)
+        modifier = modifier
             .clickable(onClick = onClick)
             .padding(vertical = 8.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -402,12 +530,13 @@ private fun CategoryPaceItem(summary: CategorySummary, onClick: () -> Unit) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = Money.formatRupeesWhole(summary.totalSpentMinor),
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
         )
         Text(
             text = "$pct%",
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -421,13 +550,13 @@ private fun CategoryPaceItem(summary: CategorySummary, onClick: () -> Unit) {
  * share one color: [CategorySummary.overallStatus], the category's elapsed-time-adjusted pace
  * (spent vs. what you'd expect to have spent by today given how much of the month has passed) —
  * so spending it all in period 1 shows red immediately, and eases back to green as elapsed time
- * catches up if nothing more is spent. The current period's cell gets a subtle highlight border
- * so "which week am I in" is visible at a glance.
+ * catches up if nothing more is spent. The current period's cell (the category's OWN current
+ * period, not the month grid's — a 2-period category is in its period 1 for the whole second
+ * half of the month) gets a subtle highlight border so "which period am I in" is visible at a
+ * glance.
  */
 @Composable
 private fun CategoryPaceSegmentedMark(summary: CategorySummary) {
-    // The category's own current period, not the month grid's: a 2-period category is in its
-    // period 1 for the whole second half of the month.
     val currentPeriodIndex = summary.currentPeriodIndex
     val overallFraction = if (summary.category.monthlyBudgetMinor > 0)
         (summary.totalSpentMinor.toFloat() / summary.category.monthlyBudgetMinor).coerceIn(0f, 1f)
@@ -451,25 +580,26 @@ private fun CategoryPaceSegmentedMark(summary: CategorySummary) {
         // Top of the column = the last period, bottom = the first — same reading direction as
         // the overall pace bar (left-to-right becomes bottom-to-top for a vertical mark).
         sortedAscending.reversed().forEach { period ->
-            val cellFraction = (overallFraction * periodCount - period.periodIndex).coerceIn(0f, 1f)
+            val targetFraction = (overallFraction * periodCount - period.periodIndex).coerceIn(0f, 1f)
+            val animatedFraction by animateFloatAsState(targetValue = targetFraction, animationSpec = tween(200), label = "categoryPace")
             val isCurrent = period.periodIndex == currentPeriodIndex
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(3.dp))
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     .then(
                         if (isCurrent) Modifier.border(1.dp, highlightColor, RoundedCornerShape(3.dp))
                         else Modifier
                     ),
                 contentAlignment = Alignment.BottomCenter
             ) {
-                if (cellFraction > 0f) {
+                if (animatedFraction > 0f) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .fillMaxHeight(cellFraction)
+                            .fillMaxHeight(animatedFraction)
                             .clip(RoundedCornerShape(3.dp))
                             .background(color)
                     )
@@ -527,7 +657,7 @@ private fun LumpSumCategoryRow(summary: CategorySummary, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,

@@ -1,57 +1,59 @@
 package com.budgetpace.app.feature.settings
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import com.budgetpace.app.core.designsystem.theme.ThemeMode
 import com.budgetpace.app.core.designsystem.theme.ThemePreference
-import com.budgetpace.app.data.google.auth.AuthorizationOutcome
+import com.budgetpace.app.core.model.BudgetMonth
 import com.budgetpace.app.data.google.auth.GoogleAuthorizationManager
+import com.budgetpace.app.data.google.auth.TokenResult
 import com.budgetpace.app.data.google.sheets.GoogleSheetsRepository
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
 import com.budgetpace.app.data.local.dao.TransactionDao
 import com.budgetpace.app.data.local.db.BudgetDatabase
-import com.budgetpace.app.data.sync.GoogleSheetsSyncWorker
+import com.budgetpace.app.data.local.mapper.toDomain
+import com.budgetpace.app.data.sync.SheetsSyncCoordinator
+import com.budgetpace.app.data.sync.SyncRunResult
+import com.budgetpace.app.data.sync.SyncScheduler
+import com.budgetpace.app.data.sync.SyncStatus
+import com.budgetpace.app.data.sync.SyncStatusStore
+import com.budgetpace.app.data.sync.toFailureFacts
 import com.budgetpace.app.domain.auth.AuthRepository
 import com.budgetpace.app.domain.auth.UserSession
 import com.budgetpace.app.domain.export.CsvExportService
+import com.budgetpace.app.domain.sync.classifySyncFailure
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
+import java.io.File
 import javax.inject.Inject
 
 sealed interface ExportState {
     object Idle : ExportState
     object Exporting : ExportState
-    data class Success(val uri: Uri) : ExportState
+    object Success : ExportState
     data class Error(val message: String) : ExportState
-}
-
-sealed interface SheetsSyncState {
-    object Idle : SheetsSyncState
-    object Syncing : SheetsSyncState
-    data class Success(val syncedCount: Int) : SheetsSyncState
-    data class Error(val message: String) : SheetsSyncState
 }
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val authRepository: AuthRepository,
     private val csvExportService: CsvExportService,
     private val budgetMonthDao: BudgetMonthDao,
@@ -59,42 +61,62 @@ class SettingsViewModel @Inject constructor(
     private val budgetDatabase: BudgetDatabase,
     private val authorizationManager: GoogleAuthorizationManager,
     private val sheetsRepository: GoogleSheetsRepository,
+    private val sheetsSyncCoordinator: SheetsSyncCoordinator,
+    private val syncScheduler: SyncScheduler,
+    private val syncStatusStore: SyncStatusStore,
     private val themePreference: ThemePreference,
 ) : ViewModel() {
 
     val session: StateFlow<UserSession?> = authRepository.currentSession
-    val isSheetsAuthorized: StateFlow<Boolean> = authorizationManager.isAuthorized
+    val isSigningIn: StateFlow<Boolean> = authRepository.isSigningIn
 
-    // A signal, not a state — see OnboardingViewModel's identical _signInError for why a plain
-    // StateFlow would silently drop a second failed attempt in a row.
+    // A signal, not a state: two failed sign-in attempts in a row must both reach a collector even
+    // though nothing else changed in between — a plain StateFlow would collapse them into one value.
     private val _signInError = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val signInError = _signInError.asSharedFlow()
 
-    private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
-    val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
+    /**
+     * Durable "Sheets is connected", correct even before any network call happens. Named to match
+     * the existing "Google backup: Connected/Not connected" subtitle on the main Settings screen
+     * (`SettingsScreen.kt`, not owned by this track) — keep this name in step with that caller.
+     */
+    val isSheetsAuthorized: StateFlow<Boolean> = authorizationManager.hasConsent
 
-    private val _sheetsSyncState = MutableStateFlow<SheetsSyncState>(SheetsSyncState.Idle)
-    val sheetsSyncState: StateFlow<SheetsSyncState> = _sheetsSyncState.asStateFlow()
+    val syncStatus: StateFlow<SyncStatus> = syncStatusStore.status
+
+    /** Bound to the real WorkManager job, not a remembered preference (spec: a real Switch). */
+    val dailyBackupEnabled: StateFlow<Boolean> = syncScheduler.observeDailyBackupEnabled()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val manualSyncRunning: StateFlow<Boolean> = syncScheduler.observeManualSyncRunning()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val pendingSyncCount: StateFlow<Int> = transactionDao.observePendingCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val syncedCount: StateFlow<Int> = transactionDao.observeSyncedCount()
+    /** Ignored ("Don't record") expenses are never in the sheet, so they're never counted here. */
+    val syncedCount: StateFlow<Int> = transactionDao.observeSyncedRecordedCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    /** The screen collects this and launches the consent PendingIntent it carries. */
+    private val _consentRequests = Channel<PendingIntent>(Channel.CONFLATED)
+    val consentRequests = _consentRequests.receiveAsFlow()
+
+    /** One-shot messages the screen shows as a Snackbar (spec: never a Toast). */
+    private val _snackbarMessages = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val snackbarMessages = _snackbarMessages.asSharedFlow()
+
+    private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
+    val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
+
+    /** Month picker: current (ACTIVE) + every archived month, newest first. */
+    val months: StateFlow<List<BudgetMonth>> = budgetMonthDao.observeAll()
+        .map { entities -> entities.map { it.toDomain() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val themeMode: StateFlow<ThemeMode> = themePreference.mode
 
     fun setThemeMode(mode: ThemeMode) = themePreference.setMode(mode)
-
-    fun lastSyncAtMillis(): Long? = sheetsRepository.lastSyncAtMillis()
-
-    /** Spec §14: "Disconnect Google" signs out and revokes the Sheets/Drive authorization. */
-    fun disconnectGoogle() {
-        viewModelScope.launch {
-            authRepository.signOut()
-            authorizationManager.clear()
-        }
-    }
 
     /**
      * Sign-in was previously only reachable from onboarding — if it failed or was skipped there,
@@ -107,109 +129,110 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** The URL for "Open backup sheet"; null before any workbook has ever been created. */
+    fun currentSpreadsheetUrl(): String? =
+        sheetsRepository.spreadsheetId?.let { "https://docs.google.com/spreadsheets/d/$it/edit" }
+
     /**
-     * Kicks off Drive/Sheets authorization (spec §7 — a step separate from sign-in). Ties the
-     * request to the already-signed-in account (when there is one) so this doesn't present its
-     * own independent account picker that could end up authorizing a different Google account
-     * than the one the user is signed in with.
-     * If consent UI is needed, [onNeedsConsent] receives the IntentSenderRequest to launch;
-     * the caller must feed the ActivityResult's data Intent back into [handleAuthorizationResult].
+     * Spec §55: manual "Sync now". Refreshes the token first (a token from an earlier authorization
+     * can go stale by the time the owner taps this) and, when Google demands fresh consent, launches
+     * the consent sheet instead of dead-ending — the bug the previous version of this screen had.
+     * The sync itself always runs as a unique expedited WorkManager job (see [SyncScheduler]) so
+     * leaving the screen can't cancel it mid-way.
      */
-    fun beginSheetsAuthorization(onNeedsConsent: (android.app.PendingIntent) -> Unit) {
-        viewModelScope.launch {
-            when (val outcome = authorizationManager.requestAuthorization(session.value?.email)) {
-                is AuthorizationOutcome.NeedsConsent -> onNeedsConsent(outcome.pendingIntent)
-                is AuthorizationOutcome.Authorized -> Unit // isSheetsAuthorized flow updates itself
-                is AuthorizationOutcome.Failed -> _sheetsSyncState.value = SheetsSyncState.Error(outcome.message)
-            }
-        }
-    }
-
-    fun handleAuthorizationResult(data: Intent?) {
-        when (val outcome = authorizationManager.handleAuthorizationResult(data)) {
-            is AuthorizationOutcome.Authorized -> Unit
-            is AuthorizationOutcome.Failed -> _sheetsSyncState.value = SheetsSyncState.Error(outcome.message)
-            is AuthorizationOutcome.NeedsConsent -> Unit // shouldn't happen from a result callback
-        }
-    }
-
-    /** Spec §55: manual "Sync now" — separate from the daily WorkManager job. */
     fun syncNow() {
         viewModelScope.launch {
-            _sheetsSyncState.value = SheetsSyncState.Syncing
-
-            // The access token from an earlier authorization can go stale by the time the user
-            // taps this — GoogleSheetsSyncWorker already refreshes it before every background
-            // sync, but this manual path never did, so a perfectly-successful "Connect Google
-            // Sheets" could still leave later manual syncs failing with a stale token.
-            when (val outcome = authorizationManager.requestAuthorization(session.value?.email)) {
-                is AuthorizationOutcome.Authorized -> Unit
-                is AuthorizationOutcome.NeedsConsent -> {
-                    _sheetsSyncState.value = SheetsSyncState.Error("Google Sheets needs to be reconnected.")
-                    return@launch
-                }
-                is AuthorizationOutcome.Failed -> {
-                    _sheetsSyncState.value = SheetsSyncState.Error(outcome.message)
-                    return@launch
+            when (val tokenResult = authorizationManager.getFreshAccessToken(session.value?.email)) {
+                is TokenResult.Ok -> syncScheduler.enqueueManualSyncNow()
+                is TokenResult.NeedsConsent -> _consentRequests.trySend(tokenResult.pendingIntent)
+                TokenResult.Cancelled -> Unit // the owner backed out; not an error, nothing to show
+                is TokenResult.Failed -> {
+                    val problem = classifySyncFailure(
+                        (tokenResult.cause ?: IllegalStateException("Token fetch failed")).toFailureFacts()
+                    )
+                    syncStatusStore.recordFailure(problem)
+                    _snackbarMessages.tryEmit(problem.message)
                 }
             }
-
-            val workbook = sheetsRepository.ensureWorkbook()
-            if (workbook.isFailure) {
-                _sheetsSyncState.value = SheetsSyncState.Error(
-                    workbook.exceptionOrNull()?.message ?: "Couldn't create the workbook."
-                )
-                return@launch
-            }
-            val result = sheetsRepository.syncPendingTransactions()
-            _sheetsSyncState.value = result.fold(
-                onSuccess = { SheetsSyncState.Success(it) },
-                onFailure = { SheetsSyncState.Error(it.message ?: "Sync failed.") }
-            )
         }
     }
 
-    fun consumeSheetsSyncState() {
-        _sheetsSyncState.value = SheetsSyncState.Idle
-    }
-
-    fun toggleDailyBackup(context: Context, enabled: Boolean) {
-        val workManager = WorkManager.getInstance(context)
-        val workName = GoogleSheetsSyncWorker.WORK_NAME
-
-        if (enabled) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
-
-            val syncRequest = PeriodicWorkRequestBuilder<GoogleSheetsSyncWorker>(24, TimeUnit.HOURS)
-                .setConstraints(constraints)
-                .build()
-
-            workManager.enqueueUniquePeriodicWork(
-                workName,
-                ExistingPeriodicWorkPolicy.UPDATE,
-                syncRequest
-            )
-        } else {
-            workManager.cancelUniqueWork(workName)
+    /** Feed the consent flow's ActivityResult back in here; retries the sync once it succeeds. */
+    fun onConsentResult(resultCode: Int, data: Intent?) {
+        viewModelScope.launch {
+            when (val tokenResult = authorizationManager.onConsentResult(resultCode, data, session.value?.email)) {
+                is TokenResult.Ok -> syncScheduler.enqueueManualSyncNow()
+                is TokenResult.Failed -> {
+                    val problem = classifySyncFailure(
+                        (tokenResult.cause ?: IllegalStateException("Consent failed")).toFailureFacts()
+                    )
+                    syncStatusStore.recordFailure(problem)
+                    _snackbarMessages.tryEmit(problem.message)
+                }
+                else -> Unit // cancelled, or (shouldn't happen from a result callback) NeedsConsent again
+            }
         }
     }
 
-    /** Spec §55: CSV export must work independently of Google authorization. */
-    fun exportCurrentMonthCsv() {
+    fun setDailyBackupEnabled(enabled: Boolean) {
+        if (enabled) syncScheduler.ensureDailyScheduled() else syncScheduler.cancelDaily()
+    }
+
+    /** The confirmed "Start a new sheet" action — never triggered silently. */
+    fun startNewSheet() {
+        viewModelScope.launch {
+            when (val outcome = sheetsSyncCoordinator.startNewSheet()) {
+                is SyncRunResult.NeedsConsent -> _consentRequests.trySend(outcome.pendingIntent)
+                is SyncRunResult.Success -> _snackbarMessages.tryEmit("Started a new backup sheet.")
+                is SyncRunResult.Failed -> _snackbarMessages.tryEmit(outcome.problem.message)
+                SyncRunResult.Cancelled -> Unit
+            }
+        }
+    }
+
+    /** "Disconnect Google": signs out and revokes Sheets access. Keeps the cached sheet id — see
+     * [forgetBackupSheet] — so reconnecting the same account later doesn't fork a second workbook. */
+    fun disconnectGoogle() {
+        viewModelScope.launch {
+            val email = session.value?.email
+            authRepository.signOut()
+            authorizationManager.revokeAndClear(email)
+        }
+    }
+
+    /** A second, separately confirmed action: stop referencing the old workbook entirely. */
+    fun forgetBackupSheet() {
+        sheetsRepository.forgetWorkbook()
+    }
+
+    fun exportCsvToUri(monthId: String, uri: Uri) {
         viewModelScope.launch {
             _exportState.value = ExportState.Exporting
-            val activeMonth = budgetMonthDao.getActiveMonth()
-            if (activeMonth == null) {
-                _exportState.value = ExportState.Error("No active month to export yet.")
-                return@launch
+            try {
+                withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openOutputStream(uri, "w")
+                        ?: throw IllegalStateException("Couldn't open the picked file")
+                    stream.use { csvExportService.export(monthId, it) }
+                }
+                _exportState.value = ExportState.Success
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Spec §61: never expose raw technical errors to the user.
+                _exportState.value = ExportState.Error("Couldn't export CSV. Your local data is safe.")
             }
-            val result = csvExportService.exportMonthToCsv(activeMonth.id)
-            _exportState.value = result.fold(
-                onSuccess = { ExportState.Success(it) },
-                onFailure = { ExportState.Error(it.message ?: "Export failed.") }
-            )
+        }
+    }
+
+    fun prepareCsvForSharing(monthId: String, fileName: String, onReady: (File) -> Unit) {
+        viewModelScope.launch {
+            try {
+                onReady(csvExportService.exportToCacheFile(monthId, fileName))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _exportState.value = ExportState.Error("Couldn't export CSV. Your local data is safe.")
+            }
         }
     }
 

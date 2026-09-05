@@ -1,43 +1,54 @@
 package com.budgetpace.app.feature.settings
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import android.provider.Settings
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AccountBalance
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import com.budgetpace.app.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budgetpace.app.R
+import com.budgetpace.app.core.designsystem.components.SettingsRow
 import com.budgetpace.app.core.designsystem.theme.ThemeMode
+import com.budgetpace.app.feature.detection.DetectionHealthViewModel
+import com.budgetpace.app.feature.detection.DetectionStatusChecker
+import com.budgetpace.app.domain.ingestion.DetectionHealth
+import kotlinx.coroutines.launch
+import java.time.Instant
 
 private const val DEVELOPER_EMAIL = "nitinreddy.nv@gmail.com"
 
 fun isNotificationListenerEnabled(context: android.content.Context): Boolean =
-    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+    androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,14 +57,17 @@ fun SettingsRoute(
     onBack: () -> Unit,
     onGoogleBackupClick: () -> Unit = {},
     onExportClick: () -> Unit = {},
+    onDetectionHealthClick: () -> Unit = {},
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Settings", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -62,13 +76,17 @@ fun SettingsRoute(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0),
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         SettingsScreen(
             viewModel = viewModel,
             modifier = Modifier.padding(innerPadding),
+            snackbarHostState = snackbarHostState,
             onGoogleBackupClick = onGoogleBackupClick,
             onExportClick = onExportClick,
+            onDetectionHealthClick = onDetectionHealthClick,
         )
     }
 }
@@ -78,16 +96,29 @@ fun SettingsRoute(
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     onGoogleBackupClick: () -> Unit = {},
     onExportClick: () -> Unit = {},
+    onDetectionHealthClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val session by viewModel.session.collectAsStateWithLifecycle()
     val isSheetsAuthorized by viewModel.isSheetsAuthorized.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     var showThemePicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var notificationAccessEnabled by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
+
+    val detectionViewModel: DetectionHealthViewModel = hiltViewModel()
+    val detectionSnapshot by detectionViewModel.snapshot.collectAsStateWithLifecycle()
+    var detectionSummary by remember { mutableStateOf("") }
+    LifecycleResumeEffect(Unit) {
+        detectionSummary = DetectionHealth.summarize(detectionSnapshot, DetectionStatusChecker.currentStatus(context), Instant.now())
+        onPauseOrDispose {}
+    }
+    LaunchedEffect(detectionSnapshot) {
+        detectionSummary = DetectionHealth.summarize(detectionSnapshot, DetectionStatusChecker.currentStatus(context), Instant.now())
+    }
 
     if (showThemePicker) {
         ThemePickerDialog(
@@ -112,7 +143,7 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     viewModel.deleteLocalData()
-                }) { Text("Delete local data", color = Color(0xFFF44336)) }
+                }) { Text("Delete local data", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -153,48 +184,42 @@ fun SettingsScreen(
 
         item {
             SettingsSectionHeader("DATA")
-            SettingsMockupItem(
-                icon = "☁",
+            SettingsRow(
+                icon = Icons.Outlined.Backup,
                 title = "Google backup",
-                subtitle = if (isSheetsAuthorized) "Connected" else "Not connected",
+                trailingText = if (isSheetsAuthorized) "Connected" else "Not connected",
                 onClick = onGoogleBackupClick,
             )
-            SettingsMockupItem(
-                icon = "⬇",
+            SettingsRow(
+                icon = Icons.Outlined.FileDownload,
                 title = "Export",
-                subtitle = "CSV",
+                trailingText = "CSV",
                 onClick = onExportClick,
             )
-            SettingsMockupItem(
-                icon = "🗑",
+            SettingsRow(
+                icon = Icons.Outlined.DeleteForever,
                 title = "Delete local data",
-                subtitle = "",
+                destructive = true,
                 onClick = { showDeleteConfirm = true },
             )
         }
 
         item {
-            SettingsSectionHeader("BANK NOTIFICATIONS")
-            // Android's notification-listener permission is a single global grant, not
-            // per-bank — there's no real per-bank state to show, so don't imply one.
-            SettingsMockupItem(icon = "🏦", title = "Supported banks", subtitle = "Kotak, SBI")
-            SettingsMockupItem(
-                icon = "🔔",
-                title = "Notification access",
-                subtitle = if (notificationAccessEnabled) "Granted" else "Not granted",
-                onClick = {
-                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    notificationAccessEnabled = isNotificationListenerEnabled(context)
-                },
+            SettingsSectionHeader("BANK DETECTION")
+            SettingsRow(
+                icon = Icons.Outlined.AccountBalance,
+                title = "Detection health",
+                subtitle = detectionSummary.ifEmpty { null },
+                onClick = onDetectionHealthClick,
             )
         }
 
         item {
             SettingsSectionHeader("APPEARANCE")
-            SettingsMockupItem(
-                icon = "🎨",
+            SettingsRow(
+                icon = Icons.Outlined.Palette,
                 title = "Theme",
-                subtitle = when (themeMode) {
+                trailingText = when (themeMode) {
                     ThemeMode.SYSTEM -> "System"
                     ThemeMode.LIGHT -> "Light"
                     ThemeMode.DARK -> "Dark"
@@ -207,10 +232,16 @@ fun SettingsScreen(
             SettingsSectionHeader("ABOUT")
             ContactDeveloperItem(
                 onClick = {
-                    val intent = Intent(Intent.ACTION_SENDTO).apply {
-                        data = Uri.parse("mailto:$DEVELOPER_EMAIL")
+                    try {
+                        val intent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("mailto:$DEVELOPER_EMAIL")
+                        }
+                        context.startActivity(intent)
+                    } catch (e: ActivityNotFoundException) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("No email app found on this phone.")
+                        }
                     }
-                    context.startActivity(intent)
                 },
             )
         }
@@ -232,7 +263,9 @@ private fun ThemePickerDialog(
             Column {
                 listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark").forEach { (mode, label) ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { onSelect(mode) }.padding(vertical = 10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                            .selectable(selected = mode == current, onClick = { onSelect(mode) })
+                            .padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = mode == current, onClick = null)
@@ -252,14 +285,13 @@ private fun ThemePickerDialog(
 fun SettingsSectionHeader(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.labelSmall,
+        style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        letterSpacing = 1.sp,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp)
     )
 }
 
-/** Same row layout as [SettingsMockupItem], but with the developer's real photo instead of a mock emoji icon. */
+/** Same row layout as [SettingsRow], but with the developer's real photo instead of an icon. */
 @Composable
 fun ContactDeveloperItem(
     onClick: () -> Unit = {}
@@ -292,56 +324,9 @@ fun ContactDeveloperItem(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    Divider(
-        color = MaterialTheme.colorScheme.outline,
-        modifier = Modifier.padding(horizontal = 24.dp)
-    )
-}
-
-@Composable
-fun SettingsMockupItem(
-    icon: String,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit = {}
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier.size(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(icon, fontSize = 16.sp) // Mock icons
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-    Divider(
+    HorizontalDivider(
         color = MaterialTheme.colorScheme.outline,
         modifier = Modifier.padding(horizontal = 24.dp)
     )

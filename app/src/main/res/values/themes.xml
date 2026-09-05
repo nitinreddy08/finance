@@ -1,3 +1,8 @@
 <resources>
-    <style name="Theme.BudgetPace" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Only covers the window before Compose's first frame (splash hand-off, cold start) — every
+         screen the owner actually sees is themed by BudgetPaceTheme (Color.kt/Theme.kt), not by
+         this file. -->
+    <style name="Theme.BudgetPace" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background_light</item>
+    </style>
 </resources>

@@ -5,64 +5,44 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.budgetpace.app.data.google.auth.AuthorizationOutcome
-import com.budgetpace.app.data.google.auth.GoogleAuthorizationManager
-import com.budgetpace.app.data.google.sheets.GoogleSheetsRepository
-import com.budgetpace.app.domain.auth.AuthRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
 /**
- * Spec §54: network-aware (via WorkManager's own NetworkType.CONNECTED constraint, set where
- * this is enqueued), retryable, idempotent, and must not retry forever when authorization is
- * missing — Result.failure() (not retry()) is used for that case.
+ * Runs one [SheetsSyncCoordinator] pass under WorkManager — used both for the daily periodic job
+ * and the manual "Sync now" one-off (spec §54/§55); [SyncScheduler] is what tells them apart.
+ *
+ * Network-aware via the `NetworkType.CONNECTED` constraint set where each is enqueued, retryable,
+ * idempotent (a re-run just re-plans from current state), and must not retry forever when the
+ * problem needs the owner — [com.budgetpace.app.domain.sync.SyncProblem.isRetryableInBackground]
+ * is what [SheetsSyncCoordinator] already checked in classifying it, so this only has to read it.
  */
 @HiltWorker
 class GoogleSheetsSyncWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
-    private val authorizationManager: GoogleAuthorizationManager,
-    private val sheetsRepository: GoogleSheetsRepository,
-    private val authRepository: AuthRepository,
+    private val coordinator: SheetsSyncCoordinator,
 ) : CoroutineWorker(appContext, workerParams) {
 
-    override suspend fun doWork(): Result {
-        // requestAuthorization() also serves as a silent token refresh when consent was already
-        // granted; only a real NeedsConsent/Failed outcome here means the user must act. Tied to
-        // the signed-in account so a background refresh can't drift onto a different one.
-        val signedInEmail = authRepository.currentSession.value?.email
-        when (val outcome = authorizationManager.requestAuthorization(signedInEmail)) {
-            is AuthorizationOutcome.Authorized -> Unit
-            is AuthorizationOutcome.NeedsConsent -> {
-                Log.w("GoogleSheetsSyncWorker", "Google Sheets needs re-authorization; open Settings")
-                return Result.failure()
-            }
-            is AuthorizationOutcome.Failed -> {
-                Log.e("GoogleSheetsSyncWorker", "Authorization failed: ${outcome.message}")
-                return Result.failure()
-            }
+    override suspend fun doWork(): Result = when (val outcome = coordinator.sync()) {
+        is SyncRunResult.Success -> {
+            Log.d(TAG, "Synced ${outcome.syncedCount} expense(s) to Google Sheets")
+            Result.success()
         }
-
-        val workbookResult = sheetsRepository.ensureWorkbook()
-        if (workbookResult.isFailure) {
-            Log.e("GoogleSheetsSyncWorker", "Workbook creation failed", workbookResult.exceptionOrNull())
-            return Result.retry()
+        is SyncRunResult.NeedsConsent -> {
+            // A worker has no Activity to launch the consent PendingIntent from; the owner
+            // reconnects from the Google backup screen instead.
+            Log.w(TAG, "Google Sheets needs to be reconnected")
+            Result.failure()
         }
-
-        val syncResult = sheetsRepository.syncPendingTransactions()
-        return syncResult.fold(
-            onSuccess = { count ->
-                Log.d("GoogleSheetsSyncWorker", "Synced $count transaction(s) to Google Sheets")
-                Result.success()
-            },
-            onFailure = { e ->
-                Log.e("GoogleSheetsSyncWorker", "Sync failed", e)
-                Result.retry()
-            }
-        )
+        is SyncRunResult.Cancelled -> Result.success()
+        is SyncRunResult.Failed -> {
+            Log.w(TAG, "Sync failed: ${outcome.problem.code}")
+            if (outcome.problem.isRetryableInBackground) Result.retry() else Result.failure()
+        }
     }
 
     companion object {
-        const val WORK_NAME = "budget_pace_daily_sync"
+        private const val TAG = "GoogleSheetsSyncWorker"
     }
 }

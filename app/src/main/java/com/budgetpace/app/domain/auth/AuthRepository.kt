@@ -12,6 +12,17 @@ data class UserSession(
 interface AuthRepository {
     val currentSession: StateFlow<UserSession?>
 
+    /** True while a [signInWithGoogle] call is in flight, so the sign-in button can disable itself. */
+    val isSigningIn: StateFlow<Boolean>
+
+    /**
+     * A classified failure from the most recent [signInWithGoogle] call — a signal (buffered
+     * [kotlinx.coroutines.flow.SharedFlow], not a state), because two failed attempts in a row
+     * must both reach a collector even if nothing else changed in between. Check
+     * [SignInProblem.isSilent] before showing anything: a cancelled account picker is not an error.
+     */
+    val signInProblem: kotlinx.coroutines.flow.SharedFlow<SignInProblem>
+
     suspend fun signInWithGoogle(context: Context): Result<UserSession>
     suspend fun signOut()
 

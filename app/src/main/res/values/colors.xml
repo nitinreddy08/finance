@@ -3,4 +3,11 @@
     <!-- Matches the cream background baked into the app logo artwork, used behind the
          adaptive-icon foreground so the two layers read as one seamless icon. -->
     <color name="ic_launcher_background">#FAF8F3</color>
+
+    <!-- Mirrors core/designsystem/theme/Color.kt's BackgroundLight/BackgroundDark — used only by
+         the pre-Compose window background (themes.xml / values-night/themes.xml) so the very
+         first frame (before BudgetPaceTheme's first composition) already matches the app's real
+         palette instead of flashing a plain white/black window. -->
+    <color name="window_background_light">#F7F6F2</color>
+    <color name="window_background_dark">#171817</color>
 </resources>

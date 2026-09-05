@@ -1,23 +1,26 @@
 package com.budgetpace.app.feature.transactions
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budgetpace.app.core.designsystem.components.CategoryChooserSheet
+import com.budgetpace.app.core.designsystem.theme.bpColors
 import com.budgetpace.app.core.model.*
 import com.budgetpace.app.core.money.Money
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
@@ -36,9 +39,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import javax.inject.Inject
+
+/** Set right before popping back from a successful save; consumed once by [TransactionsRoute]. */
+object AddedExpenseSignal {
+    var pending: Boolean = false
+}
 
 @HiltViewModel
 class AddTransactionViewModel @Inject constructor(
@@ -55,13 +65,17 @@ class AddTransactionViewModel @Inject constructor(
         .map { list -> list.map { it.toDomain() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val activeMonth: StateFlow<BudgetMonth?> = budgetMonthDao.observeActiveMonth()
+        .map { it?.toDomain() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     fun addTransaction(
-        amountDecimal: String,
+        amountMinor: Long,
         categoryId: String?,
-        direction: TransactionDirection,
+        date: LocalDate,
         note: String,
+        onDone: () -> Unit,
     ) {
-        val amountMinor = Money.rupeesToPaise(amountDecimal)
         if (amountMinor <= 0) return
 
         viewModelScope.launch {
@@ -74,10 +88,12 @@ class AddTransactionViewModel @Inject constructor(
                 monthId = activeMonth.id,
                 amountMinor = amountMinor,
                 currency = "INR",
-                direction = direction,
+                direction = TransactionDirection.DEBIT,
                 categoryId = categoryId?.let { UUID.fromString(it) },
-                transactionDateTime = now,
-                transactionDate = today,
+                // A manual entry only truly has a time when it's dated today; a past date has no
+                // real time to report, so it falls back to the date-only display everywhere else.
+                transactionDateTime = if (date == today) now else null,
+                transactionDate = date,
                 notificationReceivedAt = now,
                 bank = Bank.UNKNOWN,
                 accountSuffix = null,
@@ -96,6 +112,7 @@ class AddTransactionViewModel @Inject constructor(
             )
 
             transactionRepository.add(transaction)
+            onDone()
         }
     }
 }
@@ -110,18 +127,28 @@ fun AddTransactionRoute(
     var note by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var showCategoryPicker by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
 
     val categories by viewModel.categories.collectAsStateWithLifecycle()
-    val todayLabel = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy")) }
+    val activeMonth by viewModel.activeMonth.collectAsStateWithLifecycle()
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMM yyyy") }
+    val amountMinor = Money.rupeesToPaise(amount.ifBlank { "0" })
 
     if (showCategoryPicker) {
-        CategoryPickerDialog(
+        CategoryChooserSheet(
             categories = categories,
+            onSelectCategory = { category -> selectedCategory = category },
             onDismiss = { showCategoryPicker = false },
-            onSelect = { categoryId ->
-                selectedCategory = categories.firstOrNull { it.id.toString() == categoryId }
-                showCategoryPicker = false
-            }
+        )
+    }
+
+    if (showDatePicker) {
+        ConstrainedDatePickerDialog(
+            month = activeMonth,
+            initialDate = selectedDate,
+            onConfirm = { selectedDate = it; showDatePicker = false },
+            onDismiss = { showDatePicker = false },
         )
     }
 
@@ -132,15 +159,30 @@ fun AddTransactionRoute(
                 title = { Text("Add expense", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
-                    TextButton(onClick = {
-                        viewModel.addTransaction(amount, selectedCategory?.id?.toString(), TransactionDirection.DEBIT, note)
-                        onBack()
-                    }) {
-                        Text("Save", color = Color(0xFF4CAF50), style = MaterialTheme.typography.titleMedium)
+                    TextButton(
+                        enabled = amountMinor > 0,
+                        onClick = {
+                            viewModel.addTransaction(
+                                amountMinor = amountMinor,
+                                categoryId = selectedCategory?.id?.toString(),
+                                date = selectedDate,
+                                note = note,
+                                onDone = {
+                                    AddedExpenseSignal.pending = true
+                                    onBack()
+                                },
+                            )
+                        }
+                    ) {
+                        Text(
+                            "Save",
+                            color = if (amountMinor > 0) MaterialTheme.bpColors.accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -149,49 +191,54 @@ fun AddTransactionRoute(
                 )
             )
         },
+        contentWindowInsets = WindowInsets(0),
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .imePadding()
         ) {
             Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
 
-                // Amount
+                // Amount — digits and at most one decimal point only.
                 Column {
                     Text("Amount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TextField(
                         value = amount,
-                        onValueChange = { amount = it },
+                        onValueChange = { input -> amount = filterAmountInput(input) },
                         modifier = Modifier.fillMaxWidth(),
                         textStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onBackground),
                         prefix = { Text("₹ ", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color(0xFF4CAF50),
+                            focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            focusedIndicatorColor = MaterialTheme.bpColors.accent,
                             unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
                         ),
-                        placeholder = { Text("0", style = MaterialTheme.typography.headlineSmall, color = Color.DarkGray) }
+                        placeholder = { Text("0", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     )
                 }
 
-                // Date — spec §22 only requires today's date, no picker
+                // Date — constrained to the active month (spec).
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDatePicker = true },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
                         Text("Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(todayLabel, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                        Text(selectedDate.format(dateFormatter), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                     }
-                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Default.CalendarToday, contentDescription = "Change date", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Divider(color = MaterialTheme.colorScheme.outline)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
                 // Category
                 Row(
@@ -210,9 +257,9 @@ fun AddTransactionRoute(
                             color = if (selectedCategory != null) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Icon(Icons.Default.ChevronRight, contentDescription = "Select Category", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Default.ChevronRight, contentDescription = "Select category", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Divider(color = MaterialTheme.colorScheme.outline)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
                 // Payment Method — always Cash for manually-entered transactions (spec §11/§22)
                 Row(
@@ -226,7 +273,7 @@ fun AddTransactionRoute(
                         Text("Cash", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                     }
                 }
-                Divider(color = MaterialTheme.colorScheme.outline)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 
                 // Note
                 Column {
@@ -237,9 +284,9 @@ fun AddTransactionRoute(
                         modifier = Modifier.fillMaxWidth(),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color(0xFF4CAF50),
+                            focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            focusedIndicatorColor = MaterialTheme.bpColors.accent,
                             unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
                         ),
                         placeholder = { Text("Add a note", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -247,5 +294,69 @@ fun AddTransactionRoute(
                 }
             }
         }
+    }
+}
+
+/** Keeps only digits and at most one decimal point, so the field can never hold "12.34.56". */
+private fun filterAmountInput(input: String): String {
+    val builder = StringBuilder()
+    var dotSeen = false
+    for (c in input) {
+        when {
+            c.isDigit() -> builder.append(c)
+            c == '.' && !dotSeen -> { builder.append(c); dotSeen = true }
+        }
+    }
+    return builder.toString()
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConstrainedDatePickerDialog(
+    month: BudgetMonth?,
+    initialDate: LocalDate,
+    onConfirm: (LocalDate) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val yearMonth = month?.let { YearMonth.of(it.year, it.month) } ?: YearMonth.from(initialDate)
+    val selectableDates = remember(yearMonth) {
+        object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                val date = java.time.Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate()
+                return YearMonth.from(date) == yearMonth
+            }
+            override fun isSelectableYear(year: Int): Boolean = year == yearMonth.year
+        }
+    }
+    val initialMillis = remember(yearMonth, initialDate) {
+        val clamped = if (YearMonth.from(initialDate) == yearMonth) initialDate else yearMonth.atDay(1)
+        clamped.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    }
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = initialMillis,
+        yearRange = IntRange(yearMonth.year, yearMonth.year),
+        selectableDates = selectableDates,
+    )
+
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val millis = state.selectedDateMillis
+                    if (millis != null) {
+                        val date = java.time.Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                        onConfirm(date)
+                    } else {
+                        onDismiss()
+                    }
+                }
+            ) { Text("OK", color = MaterialTheme.bpColors.accent) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    ) {
+        DatePicker(state = state)
     }
 }

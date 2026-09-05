@@ -6,40 +6,43 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.budgetpace.app.core.designsystem.components.CATEGORY_EMOJI_CHOICES
 import com.budgetpace.app.core.designsystem.components.CategoryIcon
+import com.budgetpace.app.core.designsystem.theme.bpColors
 import com.budgetpace.app.core.model.BudgetCarryForward
 import com.budgetpace.app.core.model.Category
 import com.budgetpace.app.core.model.CategorySummary
+import com.budgetpace.app.core.model.MonthStatus
 import com.budgetpace.app.core.model.Transaction
 import com.budgetpace.app.core.money.Money
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
 import com.budgetpace.app.data.local.dao.CarryForwardDao
 import com.budgetpace.app.data.local.dao.CategoryDao
 import com.budgetpace.app.data.local.dao.TransactionDao
+import com.budgetpace.app.data.local.db.BudgetDatabase
 import com.budgetpace.app.data.local.mapper.toDomain
 import com.budgetpace.app.data.local.mapper.toEntity
+import com.budgetpace.app.domain.categorization.CategorizationPrompts
 import com.budgetpace.app.domain.repository.BudgetRepository
-import com.budgetpace.app.feature.transactions.CategoryPickerDialog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -61,6 +64,8 @@ class CategoriesViewModel @Inject constructor(
     private val categoryDao: CategoryDao,
     private val transactionDao: TransactionDao,
     private val carryForwardDao: CarryForwardDao,
+    private val budgetDatabase: BudgetDatabase,
+    private val prompts: CategorizationPrompts,
 ) : ViewModel() {
 
     val uiState: StateFlow<CategoriesUiState> = budgetRepository.observeActiveMonthSummary()
@@ -70,6 +75,17 @@ class CategoriesViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = CategoriesUiState.Loading
         )
+
+    /** So the Categories tab (always the active month) can build a categories/{monthId}/{id}
+     * route without a second round-trip through the DAO in the nav graph. */
+    val activeMonthId: StateFlow<String?> = budgetRepository.observeActiveMonthSummary()
+        .map { it?.month?.id?.toString() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Category Detail needs to read an ARCHIVED month too, and needs the month's own status to
+     * know whether editing is allowed — [uiState] only ever reflects the active month, by
+     * design, for the Categories list. */
+    fun summaryForMonth(monthId: String) = budgetRepository.observeMonthSummary(monthId)
 
     /** Spec §23: categories are fully user-defined; this is the only place new ones are created. */
     fun addCategory(name: String, budgetMinor: Long, periodCount: Int, iconKey: String) {
@@ -99,15 +115,25 @@ class CategoriesViewModel @Inject constructor(
         if (name.isBlank() || budgetMinor <= 0) return
         viewModelScope.launch {
             val existing = categoryDao.getById(categoryId) ?: return@launch
-            categoryDao.update(
-                existing.copy(
-                    name = name.trim(),
-                    monthlyBudgetMinor = budgetMinor,
-                    periodCount = periodCount,
-                    iconKey = iconKey,
-                    updatedAt = Instant.now().toEpochMilli(),
-                )
+            val periodCountChanged = existing.periodCount != periodCount
+            val updated = existing.copy(
+                name = name.trim(),
+                monthlyBudgetMinor = budgetMinor,
+                periodCount = periodCount,
+                iconKey = iconKey,
+                updatedAt = Instant.now().toEpochMilli(),
             )
+            if (periodCountChanged) {
+                // Changing how many periods a category has renumbers them, so every
+                // carry-forward it holds now points at a period that means something else —
+                // both writes happen together or not at all.
+                budgetDatabase.withTransaction {
+                    categoryDao.update(updated)
+                    carryForwardDao.deleteByCategory(categoryId)
+                }
+            } else {
+                categoryDao.update(updated)
+            }
         }
     }
 
@@ -133,20 +159,23 @@ class CategoriesViewModel @Inject constructor(
         }
     }
 
-    /** Reactive transaction list for Category Detail — reflects edits/deletes without renavigating. */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    fun observeCategoryTransactions(categoryId: String): Flow<List<Transaction>> =
-        budgetMonthDao.observeActiveMonth()
-            .filterNotNull()
-            .flatMapLatest { month -> transactionDao.observeByMonthAndCategory(month.id, categoryId) }
+    /** Reactive transaction list for Category Detail — reflects edits/deletes without
+     * renavigating. Takes the month explicitly (not always the active one) so an ARCHIVED
+     * month's category detail reads that month's own expenses, not the active month's. */
+    fun observeCategoryTransactions(monthId: String, categoryId: String): Flow<List<Transaction>> =
+        transactionDao.observeByMonthAndCategory(monthId, categoryId)
             .map { list -> list.map { it.toDomain() } }
 
     /** Spec §45: never silently delete transactions — move them all, then deactivate the category. */
     fun moveAllAndDeactivate(categoryId: String, targetCategoryId: String) {
         viewModelScope.launch {
             val now = Instant.now().toEpochMilli()
+            val affected = transactionDao.getByCategory(categoryId).map { it.id }
             transactionDao.moveAllFromCategory(categoryId, targetCategoryId, now)
             categoryDao.deactivate(categoryId, now)
+            // A pending "what was this for?" prompt for any of these would still show the old
+            // category's quick-actions after the move — take it down for each affected expense.
+            affected.forEach { prompts.cancel(it) }
         }
     }
 
@@ -163,13 +192,18 @@ class CategoriesViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             val now = Instant.now().toEpochMilli()
-            transactionIds.forEach { transactionDao.updateCategory(it, targetCategoryId, now) }
+            transactionIds.forEach { id ->
+                transactionDao.updateCategory(id, targetCategoryId, now)
+                prompts.cancel(id)
+            }
             if (transactionIds.size >= totalTransactionCount) {
                 categoryDao.deactivate(categoryId, now)
             }
         }
     }
 
+    /** Only safe when the category genuinely has no transactions left to orphan — the delete
+     * flow only ever reaches this branch after confirming that. */
     fun deactivateCategory(categoryId: String) {
         viewModelScope.launch {
             categoryDao.deactivate(categoryId, Instant.now().toEpochMilli())
@@ -201,7 +235,7 @@ fun CategoriesRoute(
                 title = { Text("Categories", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
@@ -215,12 +249,13 @@ fun CategoriesRoute(
                 )
             )
         },
+        contentWindowInsets = WindowInsets(0),
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         when (val state = uiState) {
             is CategoriesUiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize().padding(innerPadding).background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color(0xFF4CAF50))
+                    CircularProgressIndicator(color = MaterialTheme.bpColors.statusGreen)
                 }
             }
             is CategoriesUiState.Success -> {
@@ -244,7 +279,7 @@ fun CategoriesRoute(
             }
             is CategoriesUiState.Error -> {
                 Box(modifier = Modifier.fillMaxSize().padding(innerPadding).background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-                    Text("Error loading categories", color = MaterialTheme.colorScheme.onBackground)
+                    Text("Couldn't load categories.", color = MaterialTheme.colorScheme.onBackground)
                 }
             }
         }
@@ -257,6 +292,7 @@ fun CategoriesRoute(
             initialBudget = "",
             initialPeriodCount = 4,
             initialIconKey = CATEGORY_EMOJI_CHOICES.first(),
+            existingNames = categories.map { it.category.name },
             onDismiss = { showAddDialog = false },
             onConfirm = { name, budgetMinor, periodCount, iconKey ->
                 viewModel.addCategory(name, budgetMinor, periodCount, iconKey)
@@ -264,12 +300,13 @@ fun CategoriesRoute(
             }
         )
     }
-
 }
 
 /** How many periods a category's budget can be spread across — 1 means the whole amount is
  * available up front ("start of month"); anything higher divides it that many ways, equally. */
 private val PERIOD_COUNT_OPTIONS = listOf(1, 2, 3, 4)
+
+private const val MAX_BUDGET_DIGITS = 9 // up to ₹99,99,99,999 — comfortably above any real budget
 
 @Composable
 fun CategoryFormDialog(
@@ -280,6 +317,7 @@ fun CategoryFormDialog(
     initialIconKey: String,
     onDismiss: () -> Unit,
     onConfirm: (name: String, budgetMinor: Long, periodCount: Int, iconKey: String) -> Unit,
+    existingNames: List<String> = emptyList(),
 ) {
     var name by remember { mutableStateOf(initialName) }
     var budget by remember { mutableStateOf(initialBudget) }
@@ -289,7 +327,20 @@ fun CategoryFormDialog(
     // impatient double-tap on Save could land both clicks first and insert the category twice.
     var hasConfirmed by remember { mutableStateOf(false) }
 
+    val trimmedName = name.trim()
     val budgetMinor = Money.rupeesToPaise(budget.ifBlank { "0" })
+    val isDuplicateName = trimmedName.isNotEmpty() &&
+        existingNames.any { it.equals(trimmedName, ignoreCase = true) && !it.equals(initialName, ignoreCase = true) }
+    val isEmoji = isLikelyEmoji(iconKey)
+
+    val nameError = when {
+        trimmedName.isEmpty() -> "Give this category a name."
+        isDuplicateName -> "You already have a category with this name."
+        else -> null
+    }
+    val budgetError = if (budgetMinor <= 0) "Enter a budget above ₹0." else null
+    val iconError = if (!isEmoji) "Pick an emoji, not text." else null
+    val canSave = nameError == null && budgetError == null && iconError == null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -313,13 +364,13 @@ fun CategoryFormDialog(
                         val selected = emoji == iconKey
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
-                                .background(if (selected) Color(0xFF4CAF50).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { iconKey = emoji },
+                                .background(if (selected) MaterialTheme.bpColors.accent.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                                .selectable(selected = selected, onClick = { iconKey = emoji }),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(emoji, fontSize = 20.sp)
+                            Text(emoji, style = MaterialTheme.typography.titleLarge)
                         }
                     }
                 }
@@ -330,7 +381,9 @@ fun CategoryFormDialog(
                     onValueChange = { iconKey = it.take(8) },
                     label = { Text("Or type any emoji") },
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 20.sp),
+                    isError = iconError != null,
+                    supportingText = iconError?.let { { Text(it) } },
+                    textStyle = MaterialTheme.typography.headlineSmall,
                 )
 
                 OutlinedTextField(
@@ -338,21 +391,24 @@ fun CategoryFormDialog(
                     onValueChange = { name = it },
                     label = { Text("Category name") },
                     singleLine = true,
+                    isError = nameError != null,
+                    supportingText = nameError?.let { { Text(it) } },
                 )
                 OutlinedTextField(
                     value = budget,
-                    onValueChange = { budget = it.filter { c -> c.isDigit() } },
+                    onValueChange = { input -> budget = input.filter { c -> c.isDigit() }.take(MAX_BUDGET_DIGITS) },
                     label = { Text("Monthly budget") },
                     prefix = { Text("₹ ") },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
+                    isError = budgetError != null,
+                    supportingText = budgetError?.let { { Text(it) } },
                 )
 
                 Text(
                     "HOW SHOULD THIS BUDGET BE PACED?",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    letterSpacing = 1.sp,
                 )
 
                 PacingOption(
@@ -376,13 +432,13 @@ fun CategoryFormDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = !hasConfirmed,
+                enabled = canSave && !hasConfirmed,
                 onClick = {
                     hasConfirmed = true
-                    onConfirm(name, budgetMinor, periodCount, iconKey)
+                    onConfirm(trimmedName, budgetMinor, periodCount, iconKey)
                 }
             ) {
-                Text("Save", color = Color(0xFF4CAF50))
+                Text("Save", color = if (canSave) MaterialTheme.bpColors.accent else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         dismissButton = {
@@ -390,6 +446,11 @@ fun CategoryFormDialog(
         }
     )
 }
+
+/** A crude but effective emoji check: real emoji are Unicode Symbol/Other codepoints, never
+ * Unicode letters — this rejects plain alphabetic text ("AB") typed into the free emoji field
+ * without needing a full emoji-property table. */
+private fun isLikelyEmoji(s: String): Boolean = s.isNotBlank() && s.none { it.isLetter() }
 
 @Composable
 private fun PacingOption(
@@ -402,8 +463,8 @@ private fun PacingOption(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) Color(0xFF4CAF50).copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            .clickable(onClick = onClick)
+            .background(if (selected) MaterialTheme.bpColors.accent.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerHigh)
+            .selectable(selected = selected, onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -416,6 +477,8 @@ private fun PacingOption(
     }
 }
 
+private enum class DeleteMode { CONFIRM, NEEDS_ANOTHER_CATEGORY, MOVE_ALL, SELECT }
+
 /** Spec §45: delete confirmation -> move-all or per-transaction selection, never a silent delete. */
 @Composable
 fun DeleteCategoryFlow(
@@ -426,7 +489,7 @@ fun DeleteCategoryFlow(
     onCancel: () -> Unit,
 ) {
     var transactions by remember { mutableStateOf<List<Transaction>?>(null) }
-    var mode by remember { mutableStateOf("confirm") } // confirm -> moveAll | select
+    var mode by remember { mutableStateOf(DeleteMode.CONFIRM) }
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(category.id) {
@@ -437,7 +500,7 @@ fun DeleteCategoryFlow(
     if (txns == null) return // still loading — no UI flash
 
     when (mode) {
-        "confirm" -> AlertDialog(
+        DeleteMode.CONFIRM -> AlertDialog(
             onDismissRequest = onCancel,
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onBackground,
@@ -452,18 +515,22 @@ fun DeleteCategoryFlow(
             confirmButton = {
                 if (txns.isEmpty()) {
                     TextButton(onClick = { viewModel.deactivateCategory(category.id.toString()); onDone() }) {
-                        Text("Delete", color = Color(0xFFF44336))
+                        Text("Delete", color = MaterialTheme.bpColors.danger)
                     }
                 } else if (otherCategories.isNotEmpty()) {
-                    TextButton(onClick = { mode = "moveAll" }) {
-                        Text("Move all to another category", color = Color(0xFF4CAF50))
+                    TextButton(onClick = { mode = DeleteMode.MOVE_ALL }) {
+                        Text("Move all to another category", color = MaterialTheme.bpColors.accent)
+                    }
+                } else {
+                    TextButton(onClick = { mode = DeleteMode.NEEDS_ANOTHER_CATEGORY }) {
+                        Text("Continue", color = MaterialTheme.bpColors.accent)
                     }
                 }
             },
             dismissButton = {
                 Column {
-                    if (txns.isNotEmpty()) {
-                        TextButton(onClick = { mode = "select" }) {
+                    if (txns.isNotEmpty() && otherCategories.isNotEmpty()) {
+                        TextButton(onClick = { mode = DeleteMode.SELECT }) {
                             Text("Select expenses", color = MaterialTheme.colorScheme.onBackground)
                         }
                     }
@@ -472,16 +539,68 @@ fun DeleteCategoryFlow(
             }
         )
 
-        "moveAll" -> CategoryPickerDialog(
-            categories = otherCategories,
-            onDismiss = onCancel,
-            onSelect = { targetId ->
-                viewModel.moveAllAndDeactivate(category.id.toString(), targetId)
-                onDone()
+        DeleteMode.NEEDS_ANOTHER_CATEGORY -> AlertDialog(
+            onDismissRequest = onCancel,
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            title = { Text("Create another category first") },
+            text = {
+                Text(
+                    "This category's expenses have to go somewhere. Add another category, then come back to delete \"${category.name}\".",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onCancel) { Text("OK", color = MaterialTheme.bpColors.accent) }
             }
         )
 
-        "select" -> {
+        DeleteMode.MOVE_ALL -> {
+            var targetCategoryId by remember { mutableStateOf(otherCategories.firstOrNull()?.id?.toString()) }
+            AlertDialog(
+                onDismissRequest = onCancel,
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onBackground,
+                title = { Text("Move all expenses to") },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        otherCategories.forEach { c ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(selected = targetCategoryId == c.id.toString(), onClick = { targetCategoryId = c.id.toString() })
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = targetCategoryId == c.id.toString(), onClick = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                CategoryIcon(iconKey = c.iconKey, name = c.name, size = 32.dp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(c.name, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = targetCategoryId != null,
+                        onClick = {
+                            targetCategoryId?.let { viewModel.moveAllAndDeactivate(category.id.toString(), it) }
+                            onDone()
+                        }
+                    ) { Text("Move & delete", color = MaterialTheme.bpColors.accent) }
+                },
+                dismissButton = {
+                    TextButton(onClick = onCancel) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            )
+        }
+
+        DeleteMode.SELECT -> {
             var targetCategoryId by remember { mutableStateOf(otherCategories.firstOrNull()?.id?.toString()) }
             AlertDialog(
                 onDismissRequest = onCancel,
@@ -489,7 +608,11 @@ fun DeleteCategoryFlow(
                 titleContentColor = MaterialTheme.colorScheme.onBackground,
                 title = { Text("Move expenses") },
                 text = {
-                    Column {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable {
                                 selected = if (selected.size == txns.size) emptySet() else txns.map { it.id.toString() }.toSet()
@@ -538,7 +661,7 @@ fun DeleteCategoryFlow(
                             )
                             onDone()
                         }
-                    ) { Text("Move", color = Color(0xFF4CAF50)) }
+                    ) { Text("Move", color = MaterialTheme.bpColors.accent) }
                 },
                 dismissButton = {
                     TextButton(onClick = onCancel) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -559,7 +682,7 @@ fun CategoriesList(
         contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp) // Space for bottom nav
     ) {
         item { CategoriesColumnHeader() }
-        items(categories) { category ->
+        items(categories, key = { it.category.id.toString() }) { category ->
             CategoryMockupRow(
                 summary = category,
                 onClick = { onCategoryClick(category) }
@@ -654,5 +777,5 @@ fun CategoryMockupRow(
             )
         }
     }
-    Divider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 }

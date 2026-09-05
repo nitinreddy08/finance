@@ -4,6 +4,7 @@ import com.budgetpace.app.core.time.LocalDateTicker
 import com.budgetpace.app.data.local.dao.*
 import com.budgetpace.app.data.repository.BudgetRepositoryImpl
 import com.budgetpace.app.data.repository.TransactionRepositoryImpl
+import com.budgetpace.app.domain.categorization.CategorizationPrompts
 import com.budgetpace.app.domain.repository.BudgetRepository
 import com.budgetpace.app.domain.repository.TransactionRepository
 import dagger.Module
@@ -38,7 +39,8 @@ object RepositoryModule {
     fun provideTransactionRepository(
         transactionDao: TransactionDao,
         deletedTransactionDao: DeletedTransactionDao,
+        prompts: CategorizationPrompts,
     ): TransactionRepository {
-        return TransactionRepositoryImpl(transactionDao, deletedTransactionDao)
+        return TransactionRepositoryImpl(transactionDao, deletedTransactionDao, prompts)
     }
 }

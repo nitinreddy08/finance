@@ -8,7 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -20,18 +20,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budgetpace.app.core.designsystem.components.CategoryIcon
+import com.budgetpace.app.core.designsystem.statusColor
 import com.budgetpace.app.core.designsystem.theme.bpColors
-import com.budgetpace.app.core.model.BudgetStatus
+import com.budgetpace.app.core.model.MonthStatus
 import com.budgetpace.app.core.model.CategorySummary
+import com.budgetpace.app.core.model.MonthSummary
 import com.budgetpace.app.core.model.PeriodStatus
 import com.budgetpace.app.core.model.PeriodSummary
 import com.budgetpace.app.core.model.Transaction
@@ -42,22 +42,30 @@ import java.time.format.DateTimeFormatter
 /**
  * Spec §7/§10: tapping a category anywhere (Home's Category Pace, or the Categories list) lands
  * here first — Edit/Delete are reached from within this screen rather than an action sheet.
+ *
+ * Routed as categories/{monthId}/{id} (rather than just the category id) so a tile tapped from an
+ * ARCHIVED month's Home view resolves against that month's own summary, not the active month's —
+ * Edit, Delete and Carry-forward are all disabled once the month itself is archived.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryDetailRoute(
     viewModel: CategoriesViewModel,
+    monthId: String,
     categoryId: String,
     onBack: () -> Unit,
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val summary = (uiState as? CategoriesUiState.Success)?.categories
-        ?.firstOrNull { it.category.id.toString() == categoryId }
+    val monthSummary: MonthSummary? by remember(monthId) { viewModel.summaryForMonth(monthId) }
+        .collectAsStateWithLifecycle(initialValue = null)
+    val categories = monthSummary?.categories
+    val isArchived = monthSummary?.month?.status == MonthStatus.ARCHIVED
 
-    val transactions by remember(categoryId) { viewModel.observeCategoryTransactions(categoryId) }
+    val summary = categories?.firstOrNull { it.category.id.toString() == categoryId }
+
+    val transactions by remember(monthId, categoryId) { viewModel.observeCategoryTransactions(monthId, categoryId) }
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
-    val otherCategories = (uiState as? CategoriesUiState.Success)?.categories
+    val otherCategories = categories
         ?.map { it.category }
         ?.filter { it.id.toString() != categoryId }
         ?: emptyList()
@@ -66,8 +74,9 @@ fun CategoryDetailRoute(
     var showDeleteFlow by remember { mutableStateOf(false) }
 
     // Once the category is gone (deleted, or not found), leave the screen — there's nothing left
-    // to show. Loading is a separate, transient state and must not trigger this.
-    val notFound = uiState is CategoriesUiState.Success && summary == null
+    // to show. Loading (categories == null) is a separate, transient state and must not trigger
+    // this.
+    val notFound = categories != null && summary == null
     LaunchedEffect(notFound) {
         if (notFound) onBack()
     }
@@ -79,15 +88,17 @@ fun CategoryDetailRoute(
                 title = { Text(summary?.category?.name ?: "", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showEditDialog = true }) {
-                        Text("Edit", color = Color(0xFF4CAF50), style = MaterialTheme.typography.labelLarge)
-                    }
-                    IconButton(onClick = { showDeleteFlow = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete category", tint = Color(0xFFF44336))
+                    if (summary != null && !isArchived) {
+                        TextButton(onClick = { showEditDialog = true }) {
+                            Text("Edit", color = MaterialTheme.bpColors.accent, style = MaterialTheme.typography.labelLarge)
+                        }
+                        IconButton(onClick = { showDeleteFlow = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete category", tint = MaterialTheme.bpColors.danger)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -96,12 +107,14 @@ fun CategoryDetailRoute(
                 )
             )
         },
+        contentWindowInsets = WindowInsets(0),
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         summary?.let {
             CategoryDetailBody(
                 summary = it,
                 transactions = transactions,
+                editable = !isArchived,
                 modifier = Modifier.padding(innerPadding),
                 onCarryForward = { sourcePeriod, targetPeriod, amountMinor ->
                     viewModel.carryForward(categoryId, sourcePeriod, targetPeriod, amountMinor)
@@ -117,6 +130,7 @@ fun CategoryDetailRoute(
             initialBudget = (summary.category.monthlyBudgetMinor / 100).toString(),
             initialPeriodCount = summary.category.periodCount,
             initialIconKey = summary.category.iconKey.ifBlank { com.budgetpace.app.core.designsystem.components.CATEGORY_EMOJI_CHOICES.first() },
+            existingNames = otherCategories.map { it.name },
             onDismiss = { showEditDialog = false },
             onConfirm = { name, budgetMinor, periodCount, iconKey ->
                 viewModel.updateCategory(categoryId, name, budgetMinor, periodCount, iconKey)
@@ -140,6 +154,7 @@ fun CategoryDetailRoute(
 private fun CategoryDetailBody(
     summary: CategorySummary,
     transactions: List<Transaction>,
+    editable: Boolean,
     modifier: Modifier = Modifier,
     onCarryForward: (sourcePeriod: Int, targetPeriod: Int, amountMinor: Long) -> Unit = { _, _, _ -> },
 ) {
@@ -150,6 +165,23 @@ private fun CategoryDetailBody(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
+        if (!editable) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    "Past month — editing and carry-forward are turned off.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             CategoryIcon(iconKey = summary.category.iconKey, name = summary.category.name, size = 56.dp)
             Spacer(modifier = Modifier.width(16.dp))
@@ -183,9 +215,8 @@ private fun CategoryDetailBody(
         if (summary.category.periodCount > 1) {
             Text(
                 text = "PERIODS",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
             )
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -195,8 +226,8 @@ private fun CategoryDetailBody(
             }
 
             // Only offer this when there's actually unused budget in a period that has already
-            // started, and a later period to move it into.
-            val canCarryForward = summary.periods.any { source ->
+            // started, and a later period to move it into — and never on a past month.
+            val canCarryForward = editable && summary.periods.any { source ->
                 source.periodStatus != PeriodStatus.UPCOMING &&
                     source.remainingMinor > 0 &&
                     source.periodIndex < summary.periods.last().periodIndex
@@ -204,7 +235,7 @@ private fun CategoryDetailBody(
             if (canCarryForward) {
                 Spacer(modifier = Modifier.height(12.dp))
                 TextButton(onClick = { showCarryForwardDialog = true }) {
-                    Text("Carry forward unused budget", color = Color(0xFF4CAF50))
+                    Text("Carry forward unused budget", color = MaterialTheme.bpColors.accent)
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
@@ -223,9 +254,8 @@ private fun CategoryDetailBody(
 
         Text(
             text = "EXPENSES",
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (transactions.isEmpty()) {
@@ -238,7 +268,7 @@ private fun CategoryDetailBody(
         } else {
             transactions.forEach { transaction ->
                 CategoryTransactionRow(transaction)
-                Divider(color = MaterialTheme.colorScheme.outline)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             }
         }
         Spacer(modifier = Modifier.height(24.dp))
@@ -257,13 +287,7 @@ private fun LabeledAmount(label: String, value: String) {
 /** Bars only — spec's minimal-wording rule keeps "Current/Upcoming/Completed" out of the UI. */
 @Composable
 private fun PeriodBar(period: PeriodSummary, modifier: Modifier = Modifier) {
-    val color = when (period.paceStatus) {
-        BudgetStatus.GREEN -> MaterialTheme.bpColors.statusGreen
-        BudgetStatus.ORANGE -> MaterialTheme.bpColors.statusOrange
-        BudgetStatus.RED -> MaterialTheme.bpColors.statusRed
-        BudgetStatus.GREY -> MaterialTheme.colorScheme.outline
-        BudgetStatus.CURRENT -> MaterialTheme.bpColors.statusBlue
-    }
+    val color = statusColor(period.paceStatus)
     val filled = if (period.periodStatus == PeriodStatus.UPCOMING || period.effectiveBudgetMinor <= 0) 0f
     else (period.spentMinor.toFloat() / period.effectiveBudgetMinor).coerceIn(0f, 1f)
     val statusDescription = when (period.periodStatus) {
@@ -284,7 +308,7 @@ private fun PeriodBar(period: PeriodSummary, modifier: Modifier = Modifier) {
                 .fillMaxWidth()
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
         ) {
             Box(
                 modifier = Modifier
@@ -297,7 +321,7 @@ private fun PeriodBar(period: PeriodSummary, modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = if (period.periodStatus == PeriodStatus.UPCOMING) "—" else Money.formatRupeesWhole(period.spentMinor),
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -352,7 +376,12 @@ private fun CarryForwardDialog(
         titleContentColor = MaterialTheme.colorScheme.onBackground,
         title = { Text("Carry forward unused budget") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text("From", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 sourceOptions.forEach { period ->
                     Row(
@@ -396,7 +425,7 @@ private fun CarryForwardDialog(
                 enabled = amountMinor > 0 && targetPeriod != null,
                 onClick = { targetPeriod?.let { onConfirm(sourcePeriod, it, amountMinor) } }
             ) {
-                Text("Carry forward", color = Color(0xFF4CAF50))
+                Text("Carry forward", color = MaterialTheme.bpColors.accent)
             }
         },
         dismissButton = {

@@ -10,10 +10,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /** Category emoji choices offered in the add/edit category picker (spec §4). */
 val CATEGORY_EMOJI_CHOICES = listOf(
@@ -40,7 +40,12 @@ fun CategoryIcon(iconKey: String, name: String, size: Dp = 40.dp) {
         contentAlignment = Alignment.Center
     ) {
         if (isEmojiIcon(iconKey)) {
-            Text(iconKey, fontSize = (size.value * 0.6f).sp, textAlign = TextAlign.Center)
+            // Converts the container's Dp size to Sp through the real density/font-scale, rather
+            // than reinterpreting the raw Dp float as an Sp value (which drifts under a non-default
+            // font scale — the emoji would no longer track the tile size it's drawn in).
+            val density = LocalDensity.current
+            val emojiFontSize = with(density) { (size * 0.6f).toSp() }
+            Text(iconKey, fontSize = emojiFontSize, textAlign = TextAlign.Center)
         } else {
             Text(
                 name.firstOrNull()?.uppercase() ?: "?",

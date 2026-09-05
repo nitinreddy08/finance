@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.budgetpace.app.core.model.BudgetMonth
 import com.budgetpace.app.core.model.MonthSummary
 import com.budgetpace.app.data.local.dao.BudgetMonthDao
+import com.budgetpace.app.data.local.dao.TransactionDao
 import com.budgetpace.app.data.local.mapper.toDomain
 import com.budgetpace.app.domain.repository.BudgetRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,14 +14,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val budgetRepository: BudgetRepository,
     budgetMonthDao: BudgetMonthDao,
+    private val transactionDao: TransactionDao,
 ) : ViewModel() {
 
     // null means "the active month" — selecting a past month is a deliberate, one-off choice,
@@ -38,7 +41,7 @@ class DashboardViewModel @Inject constructor(
             else budgetRepository.observeMonthSummary(monthId)
         }
         .map { summary ->
-            if (summary == null) DashboardUiState.Error
+            if (summary == null) DashboardUiState.NoMonth
             else DashboardUiState.Success(summary)
         }
         .stateIn(
@@ -46,6 +49,19 @@ class DashboardViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = DashboardUiState.Loading
         )
+
+    /**
+     * Drives Home's "N expenses need a category" row, for whichever month is actually on screen
+     * right now — the active month by default, or the archived month the owner picked from the
+     * month picker — never hard-coded to the active month alone.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val uncategorizedCount: StateFlow<Int> = uiState
+        .flatMapLatest { state ->
+            val monthId = (state as? DashboardUiState.Success)?.summary?.month?.id?.toString()
+            if (monthId == null) flowOf(0) else transactionDao.observeUncategorizedCount(monthId)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /** Pass null to return to the active month. */
     fun selectMonth(monthId: String?) {
@@ -56,5 +72,7 @@ class DashboardViewModel @Inject constructor(
 sealed interface DashboardUiState {
     object Loading : DashboardUiState
     data class Success(val summary: MonthSummary) : DashboardUiState
-    object Error : DashboardUiState
+    /** No active BudgetMonth row exists yet — a brief window before onboarding finishes writing
+     * one, not a genuine error. Spec: never show "Error" copy for this. */
+    object NoMonth : DashboardUiState
 }
